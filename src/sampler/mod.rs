@@ -1,5 +1,6 @@
 //! Sampler trait and implementations for parameter sampling.
 
+pub mod grid;
 pub mod random;
 pub mod tpe;
 

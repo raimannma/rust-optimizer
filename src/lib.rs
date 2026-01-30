@@ -9,10 +9,16 @@
 #![deny(clippy::pedantic)]
 #![deny(clippy::std_instead_of_core)]
 
-//! A Tree-Parzen Estimator (TPE) library for black-box optimization.
+//! A black-box optimization library with multiple sampling strategies.
 //!
 //! This library provides an Optuna-like API for hyperparameter optimization
-//! using the Tree-Parzen Estimator algorithm. It supports:
+//! with support for multiple sampling algorithms:
+//!
+//! - **Random Search** - Simple random sampling for baseline comparisons
+//! - **TPE (Tree-Parzen Estimator)** - Bayesian optimization for efficient search
+//! - **Grid Search** - Exhaustive search over a specified parameter grid
+//!
+//! Additional features include:
 //!
 //! - Float, integer, and categorical parameter types
 //! - Log-scale and stepped parameter sampling
@@ -91,9 +97,22 @@
 //!     .unwrap();
 //! ```
 //!
-//! # Configuring TPE
+//! # Available Samplers
 //!
-//! The [`sampler::tpe::TpeSampler`] can be configured using the builder pattern:
+//! ## Random Search
+//!
+//! The simplest sampling strategy, useful for baselines:
+//!
+//! ```
+//! use optimizer::sampler::random::RandomSampler;
+//! use optimizer::{Direction, Study};
+//!
+//! let study: Study<f64> = Study::with_sampler(Direction::Minimize, RandomSampler::with_seed(42));
+//! ```
+//!
+//! ## TPE (Tree-Parzen Estimator)
+//!
+//! Bayesian optimization that learns from previous trials:
 //!
 //! ```
 //! use optimizer::sampler::tpe::TpeSampler;
@@ -105,6 +124,21 @@
 //!     .seed(42)              // Reproducibility
 //!     .build()
 //!     .unwrap();
+//! ```
+//!
+//! ## Grid Search
+//!
+//! Exhaustive search over a discretized parameter space:
+//!
+//! ```
+//! use optimizer::sampler::grid::GridSearchSampler;
+//! use optimizer::{Direction, Study};
+//!
+//! let sampler = GridSearchSampler::builder()
+//!     .n_points_per_param(10)  // Points per parameter dimension
+//!     .build();
+//!
+//! let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
 //! ```
 //!
 //! # Async and Parallel Optimization

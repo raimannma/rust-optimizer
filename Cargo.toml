@@ -8,7 +8,7 @@ authors = ["Manuel Raimann <raimannma@outlook.de"]
 description = "A Rust library for optimization algorithms."
 repository = "https://github.com/raimannma/rust-optimizer"
 documentation = "https://docs.rs/optimizer"
-keywords = ["optimization", "algorithms", "rust"]
+keywords = ["optimization", "hyperparameter", "tpe", "grid-search", "bayesian"]
 categories = ["algorithm", "science", "data-structures"]
 readme = "README.md"
 

@@ -152,7 +152,7 @@ fn test_random_sampler_uniform_float_distribution() {
 fn test_random_sampler_uniform_int_distribution() {
     let study: Study<f64> = Study::with_sampler(Direction::Minimize, RandomSampler::with_seed(123));
 
-    let n_samples = 1000;
+    let n_samples = 5000;
     let mut counts = [0u32; 10]; // counts for values 1-10
 
     study
@@ -165,11 +165,13 @@ fn test_random_sampler_uniform_int_distribution() {
         .unwrap();
 
     // Each value should appear roughly n_samples / 10 times
+    // With 5000 samples, expected ~500 per bucket, std dev ~21
+    // 20% tolerance allows for ~4.5 std devs which is very safe
     let expected = n_samples as f64 / 10.0;
     for (i, &count) in counts.iter().enumerate() {
         let diff = (count as f64 - expected).abs() / expected;
         assert!(
-            diff < 0.3,
+            diff < 0.2,
             "value {} appeared {} times, expected ~{}, diff = {:.1}%",
             i + 1,
             count,
@@ -183,7 +185,7 @@ fn test_random_sampler_uniform_int_distribution() {
 fn test_random_sampler_uniform_categorical_distribution() {
     let study: Study<f64> = Study::with_sampler(Direction::Minimize, RandomSampler::with_seed(456));
 
-    let n_samples = 1000;
+    let n_samples = 2000;
     let mut counts = [0u32; 4];
     let choices = ["a", "b", "c", "d"];
 
@@ -197,11 +199,13 @@ fn test_random_sampler_uniform_categorical_distribution() {
         .unwrap();
 
     // Each category should appear roughly n_samples / 4 times
+    // With 2000 samples, expected ~500 per bucket, std dev ~19
+    // 15% tolerance allows for ~4 std devs which is very safe
     let expected = n_samples as f64 / 4.0;
     for (i, &count) in counts.iter().enumerate() {
         let diff = (count as f64 - expected).abs() / expected;
         assert!(
-            diff < 0.25,
+            diff < 0.15,
             "category {} appeared {} times, expected ~{}, diff = {:.1}%",
             i,
             count,
