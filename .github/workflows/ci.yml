@@ -277,7 +277,7 @@ jobs:
       - name: Publish
         if: steps.check.outputs.skip == 'false'
         run: |
-          cargo publish 2>&1 | tee publish_output.txt || {
+          cargo publish --allow-dirty 2>&1 | tee publish_output.txt || {
             if grep -q "already uploaded" publish_output.txt; then
               echo "Version already published, skipping"
               exit 0
