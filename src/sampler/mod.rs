@@ -6,8 +6,6 @@ pub mod tpe;
 use std::collections::HashMap;
 
 pub use random::RandomSampler;
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
 pub use tpe::{TpeSampler, TpeSamplerBuilder};
 
 use crate::distribution::Distribution;
@@ -19,7 +17,6 @@ use crate::param::ParamValue;
 /// parameter values, their distributions, and the objective value returned
 /// by the objective function.
 #[derive(Clone, Debug)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct CompletedTrial<V = f64> {
     /// The unique identifier for this trial.
     pub id: u64,

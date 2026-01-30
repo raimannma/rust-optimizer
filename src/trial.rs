@@ -4,8 +4,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use parking_lot::RwLock;
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
 
 use crate::distribution::{
     CategoricalDistribution, Distribution, FloatDistribution, IntDistribution,
@@ -24,7 +22,6 @@ use crate::types::TrialState;
 /// `Study::create_trial()`, the trial receives the study's sampler and access
 /// to the history of completed trials for informed sampling.
 #[derive(Clone)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Trial {
     /// Unique identifier for this trial.
     id: u64,
@@ -35,10 +32,8 @@ pub struct Trial {
     /// Parameter distributions, keyed by parameter name.
     distributions: HashMap<String, Distribution>,
     /// The sampler to use for generating parameter values.
-    #[cfg_attr(feature = "serde", serde(skip))]
     sampler: Option<Arc<dyn Sampler>>,
     /// Access to the history of completed trials (shared with Study).
-    #[cfg_attr(feature = "serde", serde(skip))]
     history: Option<Arc<RwLock<Vec<CompletedTrial<f64>>>>>,
 }
 

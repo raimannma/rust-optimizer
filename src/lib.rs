@@ -7,7 +7,6 @@
 //! - Log-scale and stepped parameter sampling
 //! - Synchronous and async optimization
 //! - Parallel trial evaluation with bounded concurrency
-//! - Serialization for saving/loading study state
 //!
 //! # Quick Start
 //!
@@ -113,26 +112,8 @@
 //! }).await?;
 //! ```
 //!
-//! # Serialization
-//!
-//! With the `serde` feature enabled, studies can be serialized:
-//!
-//! ```ignore
-//! use optimizer::{Study, Direction, TpeSampler};
-//!
-//! // Save study state
-//! let study: Study<f64> = Study::new(Direction::Minimize);
-//! let json = serde_json::to_string(&study)?;
-//!
-//! // Load and continue
-//! let mut study: Study<f64> = serde_json::from_str(&json)?;
-//! study.set_sampler(TpeSampler::new());  // Restore sampler
-//! study.optimize_with_sampler(10, |trial| { /* ... */ }).unwrap();
-//! ```
-//!
 //! # Feature Flags
 //!
-//! - `serde`: Enable serialization/deserialization of studies and trials
 //! - `async`: Enable async optimization methods (requires tokio)
 
 mod distribution;
