@@ -275,7 +275,14 @@ jobs:
           fi
 
       - name: Publish
-        if: steps.check.outputs.skip == 'false' && github.ref == 'refs/heads/master'
-        run: cargo publish
+        if: steps.check.outputs.skip == 'false'
+        run: |
+          cargo publish 2>&1 | tee publish_output.txt || {
+            if grep -q "already uploaded" publish_output.txt; then
+              echo "Version already published, skipping"
+              exit 0
+            fi
+            exit 1
+          }
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
