@@ -4,6 +4,7 @@ A Rust library for black-box optimization using Tree-Parzen Estimator (TPE).
 
 [![Docs](https://docs.rs/optimize/badge.svg)](https://docs.rs/optimize)
 [![Crates.io](https://img.shields.io/crates/v/optimize.svg)](https://crates.io/crates/optimize)
+[![codecov](https://codecov.io/gh/raimannma/rust-optimize/graph/badge.svg?token=WOE77XJ4M6)](https://codecov.io/gh/raimannma/rust-optimize)
 
 ## Features
 
