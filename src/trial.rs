@@ -37,8 +37,8 @@ pub struct Trial {
     history: Option<Arc<RwLock<Vec<CompletedTrial<f64>>>>>,
 }
 
-impl std::fmt::Debug for Trial {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Debug for Trial {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("Trial")
             .field("id", &self.id)
             .field("state", &self.state)
@@ -71,6 +71,7 @@ impl Trial {
     /// let trial = Trial::new(0);
     /// assert_eq!(trial.id(), 0);
     /// ```
+    #[must_use]
     pub fn new(id: u64) -> Self {
         Self {
             id,
@@ -110,7 +111,7 @@ impl Trial {
     /// Samples a value from the given distribution using the sampler.
     ///
     /// If the trial has a sampler, it delegates to the sampler's sample method
-    /// with the history of completed trials. Otherwise, it uses the RandomSampler
+    /// with the history of completed trials. Otherwise, it uses the `RandomSampler`
     /// as a fallback.
     fn sample_value(&self, distribution: &Distribution) -> ParamValue {
         if let (Some(sampler), Some(history)) = (&self.sampler, &self.history) {
@@ -118,28 +119,32 @@ impl Trial {
             sampler.sample(distribution, self.id, &history_guard)
         } else {
             // Fallback to RandomSampler when no sampler is configured
-            use crate::sampler::RandomSampler;
+            use crate::sampler::random::RandomSampler;
             let fallback = RandomSampler::new();
             fallback.sample(distribution, self.id, &[])
         }
     }
 
     /// Returns the unique ID of this trial.
+    #[must_use]
     pub fn id(&self) -> u64 {
         self.id
     }
 
     /// Returns the current state of this trial.
+    #[must_use]
     pub fn state(&self) -> TrialState {
         self.state
     }
 
     /// Returns a reference to the sampled parameters.
+    #[must_use]
     pub fn params(&self) -> &HashMap<String, ParamValue> {
         &self.params
     }
 
     /// Returns a reference to the parameter distributions.
+    #[must_use]
     pub fn distributions(&self) -> &HashMap<String, Distribution> {
         &self.distributions
     }
@@ -200,8 +205,8 @@ impl Trial {
         if let Some(existing_dist) = self.distributions.get(&name) {
             // Verify the distribution matches
             if let Distribution::Float(existing) = existing_dist
-                && existing.low == low
-                && existing.high == high
+                && (existing.low - low).abs() < f64::EPSILON
+                && (existing.high - high).abs() < f64::EPSILON
                 && !existing.log_scale
                 && existing.step.is_none()
             {
@@ -220,9 +225,10 @@ impl Trial {
 
         // Sample using the sampler
         let dist = Distribution::Float(distribution);
-        let value = match self.sample_value(&dist) {
-            ParamValue::Float(v) => v,
-            _ => unreachable!("Float distribution should return Float value"),
+        let ParamValue::Float(value) = self.sample_value(&dist) else {
+            return Err(TpeError::Internal(
+                "Float distribution should return Float value",
+            ));
         };
 
         // Store distribution and value
@@ -237,7 +243,7 @@ impl Trial {
     /// The value is sampled uniformly in log space, which is useful for parameters
     /// that span multiple orders of magnitude (e.g., learning rates).
     ///
-    /// If the parameter has already been sampled with the same bounds and log_scale=true,
+    /// If the parameter has already been sampled with the same bounds and `log_scale=true`,
     /// the cached value is returned. If the parameter was sampled with different configuration,
     /// a `ParameterConflict` error is returned.
     ///
@@ -296,8 +302,8 @@ impl Trial {
         if let Some(existing_dist) = self.distributions.get(&name) {
             // Verify the distribution matches
             if let Distribution::Float(existing) = existing_dist
-                && existing.low == low
-                && existing.high == high
+                && (existing.low - low).abs() < f64::EPSILON
+                && (existing.high - high).abs() < f64::EPSILON
                 && existing.log_scale
                 && existing.step.is_none()
             {
@@ -316,9 +322,10 @@ impl Trial {
 
         // Sample using the sampler (sampler handles log-scale transformation)
         let dist = Distribution::Float(distribution);
-        let value = match self.sample_value(&dist) {
-            ParamValue::Float(v) => v,
-            _ => unreachable!("Float distribution should return Float value"),
+        let ParamValue::Float(value) = self.sample_value(&dist) else {
+            return Err(TpeError::Internal(
+                "Float distribution should return Float value",
+            ));
         };
 
         // Store distribution and value
@@ -392,8 +399,8 @@ impl Trial {
         if let Some(existing_dist) = self.distributions.get(&name) {
             // Verify the distribution matches
             if let Distribution::Float(existing) = existing_dist
-                && existing.low == low
-                && existing.high == high
+                && (existing.low - low).abs() < f64::EPSILON
+                && (existing.high - high).abs() < f64::EPSILON
                 && !existing.log_scale
                 && existing.step == Some(step)
             {
@@ -412,9 +419,10 @@ impl Trial {
 
         // Sample using the sampler (sampler handles step-grid)
         let dist = Distribution::Float(distribution);
-        let value = match self.sample_value(&dist) {
-            ParamValue::Float(v) => v,
-            _ => unreachable!("Float distribution should return Float value"),
+        let ParamValue::Float(value) = self.sample_value(&dist) else {
+            return Err(TpeError::Internal(
+                "Float distribution should return Float value",
+            ));
         };
 
         // Store distribution and value
@@ -455,6 +463,7 @@ impl Trial {
     /// let n2 = trial.suggest_int("n_layers", 1, 10).unwrap();
     /// assert_eq!(n, n2);
     /// ```
+    #[allow(clippy::cast_precision_loss)]
     pub fn suggest_int(&mut self, name: impl Into<String>, low: i64, high: i64) -> Result<i64> {
         if low > high {
             return Err(TpeError::InvalidBounds {
@@ -495,9 +504,10 @@ impl Trial {
 
         // Sample using the sampler
         let dist = Distribution::Int(distribution);
-        let value = match self.sample_value(&dist) {
-            ParamValue::Int(v) => v,
-            _ => unreachable!("Int distribution should return Int value"),
+        let ParamValue::Int(value) = self.sample_value(&dist) else {
+            return Err(TpeError::Internal(
+                "Int distribution should return Int value",
+            ));
         };
 
         // Store distribution and value
@@ -512,7 +522,7 @@ impl Trial {
     /// The value is sampled uniformly in log space, which is useful for parameters
     /// that span multiple orders of magnitude (e.g., batch sizes).
     ///
-    /// If the parameter has already been sampled with the same bounds and log_scale=true,
+    /// If the parameter has already been sampled with the same bounds and `log_scale=true`,
     /// the cached value is returned. If the parameter was sampled with different configuration,
     /// a `ParameterConflict` error is returned.
     ///
@@ -541,6 +551,7 @@ impl Trial {
     /// let batch_size2 = trial.suggest_int_log("batch_size", 1, 1024).unwrap();
     /// assert_eq!(batch_size, batch_size2);
     /// ```
+    #[allow(clippy::cast_precision_loss)]
     pub fn suggest_int_log(&mut self, name: impl Into<String>, low: i64, high: i64) -> Result<i64> {
         if low < 1 {
             return Err(TpeError::InvalidLogBounds);
@@ -585,9 +596,10 @@ impl Trial {
 
         // Sample using the sampler (sampler handles log-scale transformation)
         let dist = Distribution::Int(distribution);
-        let value = match self.sample_value(&dist) {
-            ParamValue::Int(v) => v,
-            _ => unreachable!("Int distribution should return Int value"),
+        let ParamValue::Int(value) = self.sample_value(&dist) else {
+            return Err(TpeError::Internal(
+                "Int distribution should return Int value",
+            ));
         };
 
         // Store distribution and value
@@ -638,6 +650,7 @@ impl Trial {
     ///     .unwrap();
     /// assert_eq!(n, n2);
     /// ```
+    #[allow(clippy::cast_precision_loss)]
     pub fn suggest_int_step(
         &mut self,
         name: impl Into<String>,
@@ -688,9 +701,10 @@ impl Trial {
 
         // Sample using the sampler (sampler handles step-grid)
         let dist = Distribution::Int(distribution);
-        let value = match self.sample_value(&dist) {
-            ParamValue::Int(v) => v,
-            _ => unreachable!("Int distribution should return Int value"),
+        let ParamValue::Int(value) = self.sample_value(&dist) else {
+            return Err(TpeError::Internal(
+                "Int distribution should return Int value",
+            ));
         };
 
         // Store distribution and value
@@ -774,9 +788,10 @@ impl Trial {
 
         // Sample using the sampler
         let dist = Distribution::Categorical(distribution);
-        let index = match self.sample_value(&dist) {
-            ParamValue::Categorical(idx) => idx,
-            _ => unreachable!("Categorical distribution should return Categorical value"),
+        let ParamValue::Categorical(index) = self.sample_value(&dist) else {
+            return Err(TpeError::Internal(
+                "Categorical distribution should return Categorical value",
+            ));
         };
 
         // Store distribution and value (store the index)

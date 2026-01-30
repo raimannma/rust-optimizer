@@ -4,7 +4,9 @@
 
 #![cfg(feature = "async")]
 
-use optimizer::{Direction, RandomSampler, Study, TpeError, TpeSampler};
+use optimizer::sampler::random::RandomSampler;
+use optimizer::sampler::tpe::TpeSampler;
+use optimizer::{Direction, Study, TpeError};
 
 #[tokio::test]
 async fn test_optimize_async_basic() {
@@ -26,7 +28,11 @@ async fn test_optimize_async_basic() {
 
 #[tokio::test]
 async fn test_optimize_async_with_sampler() {
-    let sampler = TpeSampler::builder().seed(42).n_startup_trials(5).build();
+    let sampler = TpeSampler::builder()
+        .seed(42)
+        .n_startup_trials(5)
+        .build()
+        .unwrap();
 
     let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
 
@@ -61,7 +67,11 @@ async fn test_optimize_parallel() {
 
 #[tokio::test]
 async fn test_optimize_parallel_with_sampler() {
-    let sampler = TpeSampler::builder().seed(42).n_startup_trials(5).build();
+    let sampler = TpeSampler::builder()
+        .seed(42)
+        .n_startup_trials(5)
+        .build()
+        .unwrap();
 
     let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
 

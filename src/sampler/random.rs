@@ -17,7 +17,7 @@ use crate::sampler::{CompletedTrial, Sampler};
 /// # Examples
 ///
 /// ```
-/// use optimizer::RandomSampler;
+/// use optimizer::sampler::random::RandomSampler;
 ///
 /// // Create with default RNG
 /// let sampler = RandomSampler::new();
@@ -31,6 +31,7 @@ pub struct RandomSampler {
 
 impl RandomSampler {
     /// Creates a new random sampler with a default random seed.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             rng: Mutex::new(StdRng::from_os_rng()),
@@ -40,6 +41,7 @@ impl RandomSampler {
     /// Creates a new random sampler with a fixed seed for reproducibility.
     ///
     /// Using the same seed will produce the same sequence of sampled values.
+    #[must_use]
     pub fn with_seed(seed: u64) -> Self {
         Self {
             rng: Mutex::new(StdRng::seed_from_u64(seed)),
@@ -54,6 +56,7 @@ impl Default for RandomSampler {
 }
 
 impl Sampler for RandomSampler {
+    #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
     fn sample(
         &self,
         distribution: &Distribution,
@@ -110,6 +113,7 @@ impl Sampler for RandomSampler {
 }
 
 #[cfg(test)]
+#[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
 mod tests {
     use super::*;
     use crate::distribution::{CategoricalDistribution, FloatDistribution, IntDistribution};

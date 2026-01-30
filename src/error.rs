@@ -38,7 +38,28 @@ pub enum TpeError {
     /// Returned when requesting the best trial but no trials have completed.
     #[error("no completed trials available")]
     NoCompletedTrials,
+
+    /// Returned when gamma is not in the valid range (0.0, 1.0).
+    #[error("invalid gamma: {0} must be in (0.0, 1.0)")]
+    InvalidGamma(f64),
+
+    /// Returned when bandwidth is not positive.
+    #[error("invalid bandwidth: {0} must be positive")]
+    InvalidBandwidth(f64),
+
+    /// Returned when KDE is created with empty samples.
+    #[error("KDE requires at least one sample")]
+    EmptySamples,
+
+    /// Returned when an internal invariant is violated.
+    #[error("internal error: {0}")]
+    Internal(&'static str),
+
+    /// Returned when an async task fails.
+    #[cfg(feature = "async")]
+    #[error("async task error: {0}")]
+    TaskError(String),
 }
 
 /// A specialized Result type for TPE operations.
-pub type Result<T> = std::result::Result<T, TpeError>;
+pub type Result<T> = core::result::Result<T, TpeError>;

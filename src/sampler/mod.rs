@@ -1,12 +1,9 @@
 //! Sampler trait and implementations for parameter sampling.
 
-mod random;
+pub mod random;
 pub mod tpe;
 
 use std::collections::HashMap;
-
-pub use random::RandomSampler;
-pub use tpe::{TpeSampler, TpeSamplerBuilder};
 
 use crate::distribution::Distribution;
 use crate::param::ParamValue;

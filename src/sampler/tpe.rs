@@ -9,6 +9,7 @@ use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 
 use crate::distribution::Distribution;
+use crate::error::{Result, TpeError};
 use crate::kde::KernelDensityEstimator;
 use crate::param::ParamValue;
 use crate::sampler::{CompletedTrial, Sampler};
@@ -27,7 +28,7 @@ use crate::sampler::{CompletedTrial, Sampler};
 /// # Examples
 ///
 /// ```
-/// use optimizer::TpeSampler;
+/// use optimizer::sampler::tpe::TpeSampler;
 ///
 /// // Create with default settings
 /// let sampler = TpeSampler::new();
@@ -38,7 +39,8 @@ use crate::sampler::{CompletedTrial, Sampler};
 ///     .n_startup_trials(20)
 ///     .n_ei_candidates(32)
 ///     .seed(42)
-///     .build();
+///     .build()
+///     .unwrap();
 /// ```
 pub struct TpeSampler {
     /// Fraction of trials to consider as "good" (gamma quantile).
@@ -58,9 +60,10 @@ impl TpeSampler {
     ///
     /// Default settings:
     /// - gamma: 0.25 (top 25% of trials are considered "good")
-    /// - n_startup_trials: 10 (random sampling for first 10 trials)
-    /// - n_ei_candidates: 24 (evaluate 24 candidates per sample)
-    /// - kde_bandwidth: None (uses Scott's rule for automatic bandwidth)
+    /// - `n_startup_trials`: 10 (random sampling for first 10 trials)
+    /// - `n_ei_candidates`: 24 (evaluate 24 candidates per sample)
+    /// - `kde_bandwidth`: None (uses Scott's rule for automatic bandwidth)
+    #[must_use]
     pub fn new() -> Self {
         Self {
             gamma: 0.25,
@@ -76,15 +79,17 @@ impl TpeSampler {
     /// # Examples
     ///
     /// ```
-    /// use optimizer::TpeSampler;
+    /// use optimizer::sampler::tpe::TpeSampler;
     ///
     /// let sampler = TpeSampler::builder()
     ///     .gamma(0.15)
     ///     .n_startup_trials(20)
     ///     .n_ei_candidates(32)
     ///     .seed(42)
-    ///     .build();
+    ///     .build()
+    ///     .unwrap();
     /// ```
+    #[must_use]
     pub fn builder() -> TpeSamplerBuilder {
         TpeSamplerBuilder::new()
     }
@@ -99,22 +104,24 @@ impl TpeSampler {
     /// * `kde_bandwidth` - Optional fixed bandwidth for KDE. If None, uses Scott's rule.
     /// * `seed` - Optional seed for reproducibility.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if gamma is not in (0.0, 1.0) or if kde_bandwidth is Some but not positive.
+    /// Returns `TpeError::InvalidGamma` if gamma is not in (0.0, 1.0).
+    /// Returns `TpeError::InvalidBandwidth` if `kde_bandwidth` is Some but not positive.
     pub fn with_config(
         gamma: f64,
         n_startup_trials: usize,
         n_ei_candidates: usize,
         kde_bandwidth: Option<f64>,
         seed: Option<u64>,
-    ) -> Self {
-        assert!(
-            gamma > 0.0 && gamma < 1.0,
-            "gamma must be in (0.0, 1.0), got {gamma}"
-        );
-        if let Some(bw) = kde_bandwidth {
-            assert!(bw > 0.0, "kde_bandwidth must be positive, got {bw}");
+    ) -> Result<Self> {
+        if gamma <= 0.0 || gamma >= 1.0 {
+            return Err(TpeError::InvalidGamma(gamma));
+        }
+        if let Some(bw) = kde_bandwidth
+            && bw <= 0.0
+        {
+            return Err(TpeError::InvalidBandwidth(bw));
         }
 
         let rng = match seed {
@@ -122,19 +129,24 @@ impl TpeSampler {
             None => StdRng::from_os_rng(),
         };
 
-        Self {
+        Ok(Self {
             gamma,
             n_startup_trials,
             n_ei_candidates,
             kde_bandwidth,
             rng: Mutex::new(rng),
-        }
+        })
     }
 
     /// Splits trials into good and bad groups based on the gamma quantile.
     ///
-    /// Returns (good_trials, bad_trials) where good_trials contains trials
+    /// Returns (`good_trials`, `bad_trials`) where `good_trials` contains trials
     /// with values below the gamma quantile (for minimization).
+    #[allow(
+        clippy::cast_precision_loss,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss
+    )]
     fn split_trials<'a>(
         &self,
         history: &'a [CompletedTrial],
@@ -149,7 +161,7 @@ impl TpeSampler {
             history[a]
                 .value
                 .partial_cmp(&history[b].value)
-                .unwrap_or(std::cmp::Ordering::Equal)
+                .unwrap_or(core::cmp::Ordering::Equal)
         });
 
         // Calculate the split point (gamma quantile)
@@ -171,6 +183,11 @@ impl TpeSampler {
     }
 
     /// Samples uniformly from a distribution (used during startup phase).
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_precision_loss,
+        clippy::unused_self
+    )]
     fn sample_uniform(&self, distribution: &Distribution, rng: &mut StdRng) -> ParamValue {
         match distribution {
             Distribution::Float(d) => {
@@ -241,6 +258,11 @@ impl TpeSampler {
             None => KernelDensityEstimator::new(bad_internal),
         };
 
+        // If KDE construction fails, fall back to uniform sampling
+        let (Ok(l_kde), Ok(g_kde)) = (l_kde, g_kde) else {
+            return rng.random_range(low..=high);
+        };
+
         // Generate candidates from l(x) and select the one with best l(x)/g(x) ratio
         let mut best_candidate = internal_low;
         let mut best_ratio = f64::NEG_INFINITY;
@@ -289,15 +311,19 @@ impl TpeSampler {
     }
 
     /// Samples using TPE for integer distributions.
-    #[allow(clippy::too_many_arguments)]
+    #[allow(
+        clippy::too_many_arguments,
+        clippy::cast_precision_loss,
+        clippy::cast_possible_truncation
+    )]
     fn sample_tpe_int(
         &self,
         low: i64,
         high: i64,
         log_scale: bool,
         step: Option<i64>,
-        good_values: Vec<i64>,
-        bad_values: Vec<i64>,
+        good_values: &[i64],
+        bad_values: &[i64],
         rng: &mut StdRng,
     ) -> i64 {
         // Convert to floats for KDE
@@ -331,23 +357,24 @@ impl TpeSampler {
     }
 
     /// Samples using TPE for categorical distributions.
+    #[allow(clippy::cast_precision_loss, clippy::unused_self)]
     fn sample_tpe_categorical(
         &self,
         n_choices: usize,
-        good_indices: Vec<usize>,
-        bad_indices: Vec<usize>,
+        good_indices: &[usize],
+        bad_indices: &[usize],
         rng: &mut StdRng,
     ) -> usize {
         // Count occurrences in good and bad groups
         let mut good_counts = vec![0usize; n_choices];
         let mut bad_counts = vec![0usize; n_choices];
 
-        for &idx in &good_indices {
+        for &idx in good_indices {
             if idx < n_choices {
                 good_counts[idx] += 1;
             }
         }
-        for &idx in &bad_indices {
+        for &idx in bad_indices {
             if idx < n_choices {
                 bad_counts[idx] += 1;
             }
@@ -395,14 +422,15 @@ impl Default for TpeSampler {
 /// # Examples
 ///
 /// ```
-/// use optimizer::TpeSamplerBuilder;
+/// use optimizer::sampler::tpe::TpeSamplerBuilder;
 ///
 /// let sampler = TpeSamplerBuilder::new()
 ///     .gamma(0.15)
 ///     .n_startup_trials(20)
 ///     .n_ei_candidates(32)
 ///     .seed(42)
-///     .build();
+///     .build()
+///     .unwrap();
 /// ```
 #[derive(Debug, Clone)]
 pub struct TpeSamplerBuilder {
@@ -418,10 +446,11 @@ impl TpeSamplerBuilder {
     ///
     /// Default settings:
     /// - gamma: 0.25 (top 25% of trials are considered "good")
-    /// - n_startup_trials: 10 (random sampling for first 10 trials)
-    /// - n_ei_candidates: 24 (evaluate 24 candidates per sample)
-    /// - kde_bandwidth: None (uses Scott's rule for automatic bandwidth)
+    /// - `n_startup_trials`: 10 (random sampling for first 10 trials)
+    /// - `n_ei_candidates`: 24 (evaluate 24 candidates per sample)
+    /// - `kde_bandwidth`: None (uses Scott's rule for automatic bandwidth)
     /// - seed: None (use OS-provided entropy)
+    #[must_use]
     pub fn new() -> Self {
         Self {
             gamma: 0.25,
@@ -441,24 +470,23 @@ impl TpeSamplerBuilder {
     ///
     /// * `gamma` - Quantile value, must be in (0.0, 1.0).
     ///
-    /// # Panics
-    ///
-    /// Panics if gamma is not in (0.0, 1.0).
-    ///
     /// # Examples
     ///
     /// ```
-    /// use optimizer::TpeSamplerBuilder;
+    /// use optimizer::sampler::tpe::TpeSamplerBuilder;
     ///
     /// let sampler = TpeSamplerBuilder::new()
     ///     .gamma(0.10)  // Use top 10% as "good" trials
-    ///     .build();
+    ///     .build()
+    ///     .unwrap();
     /// ```
+    ///
+    /// # Note
+    ///
+    /// Validation happens at `build()` time. If gamma is not in (0.0, 1.0),
+    /// `build()` will return `Err(TpeError::InvalidGamma)`.
+    #[must_use]
     pub fn gamma(mut self, gamma: f64) -> Self {
-        assert!(
-            gamma > 0.0 && gamma < 1.0,
-            "gamma must be in (0.0, 1.0), got {gamma}"
-        );
         self.gamma = gamma;
         self
     }
@@ -476,12 +504,14 @@ impl TpeSamplerBuilder {
     /// # Examples
     ///
     /// ```
-    /// use optimizer::TpeSamplerBuilder;
+    /// use optimizer::sampler::tpe::TpeSamplerBuilder;
     ///
     /// let sampler = TpeSamplerBuilder::new()
     ///     .n_startup_trials(20)  // Random sample first 20 trials
-    ///     .build();
+    ///     .build()
+    ///     .unwrap();
     /// ```
+    #[must_use]
     pub fn n_startup_trials(mut self, n: usize) -> Self {
         self.n_startup_trials = n;
         self
@@ -500,12 +530,14 @@ impl TpeSamplerBuilder {
     /// # Examples
     ///
     /// ```
-    /// use optimizer::TpeSamplerBuilder;
+    /// use optimizer::sampler::tpe::TpeSamplerBuilder;
     ///
     /// let sampler = TpeSamplerBuilder::new()
     ///     .n_ei_candidates(48)  // Evaluate more candidates
-    ///     .build();
+    ///     .build()
+    ///     .unwrap();
     /// ```
+    #[must_use]
     pub fn n_ei_candidates(mut self, n: usize) -> Self {
         self.n_ei_candidates = n;
         self
@@ -523,24 +555,23 @@ impl TpeSamplerBuilder {
     ///
     /// * `bandwidth` - The fixed bandwidth (standard deviation) for Gaussian kernels.
     ///
-    /// # Panics
-    ///
-    /// Panics if bandwidth is not positive.
-    ///
     /// # Examples
     ///
     /// ```
-    /// use optimizer::TpeSamplerBuilder;
+    /// use optimizer::sampler::tpe::TpeSamplerBuilder;
     ///
     /// let sampler = TpeSamplerBuilder::new()
     ///     .kde_bandwidth(0.5)  // Fixed bandwidth of 0.5
-    ///     .build();
+    ///     .build()
+    ///     .unwrap();
     /// ```
+    ///
+    /// # Note
+    ///
+    /// Validation happens at `build()` time. If bandwidth is not positive,
+    /// `build()` will return `Err(TpeError::InvalidBandwidth)`.
+    #[must_use]
     pub fn kde_bandwidth(mut self, bandwidth: f64) -> Self {
-        assert!(
-            bandwidth > 0.0,
-            "kde_bandwidth must be positive, got {bandwidth}"
-        );
         self.kde_bandwidth = Some(bandwidth);
         self
     }
@@ -554,12 +585,14 @@ impl TpeSamplerBuilder {
     /// # Examples
     ///
     /// ```
-    /// use optimizer::TpeSamplerBuilder;
+    /// use optimizer::sampler::tpe::TpeSamplerBuilder;
     ///
     /// let sampler = TpeSamplerBuilder::new()
     ///     .seed(42)  // Reproducible results
-    ///     .build();
+    ///     .build()
+    ///     .unwrap();
     /// ```
+    #[must_use]
     pub fn seed(mut self, seed: u64) -> Self {
         self.seed = Some(seed);
         self
@@ -567,19 +600,25 @@ impl TpeSamplerBuilder {
 
     /// Builds the configured [`TpeSampler`].
     ///
+    /// # Errors
+    ///
+    /// Returns `TpeError::InvalidGamma` if gamma is not in (0.0, 1.0).
+    /// Returns `TpeError::InvalidBandwidth` if `kde_bandwidth` is Some but not positive.
+    ///
     /// # Examples
     ///
     /// ```
-    /// use optimizer::TpeSamplerBuilder;
+    /// use optimizer::sampler::tpe::TpeSamplerBuilder;
     ///
     /// let sampler = TpeSamplerBuilder::new()
     ///     .gamma(0.15)
     ///     .n_startup_trials(20)
     ///     .n_ei_candidates(32)
     ///     .seed(42)
-    ///     .build();
+    ///     .build()
+    ///     .unwrap();
     /// ```
-    pub fn build(self) -> TpeSampler {
+    pub fn build(self) -> Result<TpeSampler> {
         TpeSampler::with_config(
             self.gamma,
             self.n_startup_trials,
@@ -597,6 +636,7 @@ impl Default for TpeSamplerBuilder {
 }
 
 impl Sampler for TpeSampler {
+    #[allow(clippy::too_many_lines)]
     fn sample(
         &self,
         distribution: &Distribution,
@@ -693,8 +733,8 @@ impl Sampler for TpeSampler {
                     d.high,
                     d.log_scale,
                     d.step,
-                    good_values,
-                    bad_values,
+                    &good_values,
+                    &bad_values,
                     &mut rng,
                 );
                 ParamValue::Int(value)
@@ -725,7 +765,7 @@ impl Sampler for TpeSampler {
                 }
 
                 let index =
-                    self.sample_tpe_categorical(d.n_choices, good_indices, bad_indices, &mut rng);
+                    self.sample_tpe_categorical(d.n_choices, &good_indices, &bad_indices, &mut rng);
                 ParamValue::Categorical(index)
             }
         }
@@ -733,6 +773,11 @@ impl Sampler for TpeSampler {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::similar_names,
+    clippy::cast_sign_loss,
+    clippy::cast_precision_loss
+)]
 mod tests {
     use std::collections::HashMap;
 
@@ -756,34 +801,34 @@ mod tests {
     #[test]
     fn test_tpe_sampler_new() {
         let sampler = TpeSampler::new();
-        assert_eq!(sampler.gamma, 0.25);
+        assert!((sampler.gamma - 0.25).abs() < f64::EPSILON);
         assert_eq!(sampler.n_startup_trials, 10);
         assert_eq!(sampler.n_ei_candidates, 24);
     }
 
     #[test]
     fn test_tpe_sampler_with_config() {
-        let sampler = TpeSampler::with_config(0.15, 20, 32, None, Some(42));
-        assert_eq!(sampler.gamma, 0.15);
+        let sampler = TpeSampler::with_config(0.15, 20, 32, None, Some(42)).unwrap();
+        assert!((sampler.gamma - 0.15).abs() < f64::EPSILON);
         assert_eq!(sampler.n_startup_trials, 20);
         assert_eq!(sampler.n_ei_candidates, 32);
     }
 
     #[test]
-    #[should_panic(expected = "gamma must be in (0.0, 1.0)")]
     fn test_tpe_sampler_invalid_gamma_zero() {
-        TpeSampler::with_config(0.0, 10, 24, None, None);
+        let result = TpeSampler::with_config(0.0, 10, 24, None, None);
+        assert!(matches!(result, Err(TpeError::InvalidGamma(_))));
     }
 
     #[test]
-    #[should_panic(expected = "gamma must be in (0.0, 1.0)")]
     fn test_tpe_sampler_invalid_gamma_one() {
-        TpeSampler::with_config(1.0, 10, 24, None, None);
+        let result = TpeSampler::with_config(1.0, 10, 24, None, None);
+        assert!(matches!(result, Err(TpeError::InvalidGamma(_))));
     }
 
     #[test]
     fn test_tpe_startup_random_sampling() {
-        let sampler = TpeSampler::with_config(0.25, 10, 24, None, Some(42));
+        let sampler = TpeSampler::with_config(0.25, 10, 24, None, Some(42)).unwrap();
         let dist = Distribution::Float(FloatDistribution {
             low: 0.0,
             high: 1.0,
@@ -806,7 +851,7 @@ mod tests {
 
     #[test]
     fn test_tpe_split_trials() {
-        let sampler = TpeSampler::with_config(0.25, 10, 24, None, Some(42));
+        let sampler = TpeSampler::with_config(0.25, 10, 24, None, Some(42)).unwrap();
 
         let dist = Distribution::Float(FloatDistribution {
             low: 0.0,
@@ -820,8 +865,8 @@ mod tests {
             .map(|i| {
                 create_trial(
                     i as u64,
-                    i as f64,
-                    vec![("x", ParamValue::Float(i as f64 / 20.0), dist.clone())],
+                    f64::from(i),
+                    vec![("x", ParamValue::Float(f64::from(i) / 20.0), dist.clone())],
                 )
             })
             .collect();
@@ -840,7 +885,7 @@ mod tests {
 
     #[test]
     fn test_tpe_samples_float_with_history() {
-        let sampler = TpeSampler::with_config(0.25, 5, 24, None, Some(42));
+        let sampler = TpeSampler::with_config(0.25, 5, 24, None, Some(42)).unwrap();
 
         let dist = Distribution::Float(FloatDistribution {
             low: 0.0,
@@ -852,7 +897,7 @@ mod tests {
         // Create history where low values (near 0.2) are "good"
         let history: Vec<CompletedTrial> = (0..20)
             .map(|i| {
-                let x = i as f64 / 20.0;
+                let x = f64::from(i) / 20.0;
                 // Objective is (x - 0.2)^2, minimized at x=0.2
                 let value = (x - 0.2).powi(2);
                 create_trial(
@@ -882,7 +927,7 @@ mod tests {
 
     #[test]
     fn test_tpe_categorical_sampling() {
-        let sampler = TpeSampler::with_config(0.25, 5, 24, None, Some(42));
+        let sampler = TpeSampler::with_config(0.25, 5, 24, None, Some(42)).unwrap();
 
         let dist = Distribution::Categorical(CategoricalDistribution { n_choices: 4 });
 
@@ -922,7 +967,7 @@ mod tests {
 
     #[test]
     fn test_tpe_int_sampling() {
-        let sampler = TpeSampler::with_config(0.25, 5, 24, None, Some(42));
+        let sampler = TpeSampler::with_config(0.25, 5, 24, None, Some(42)).unwrap();
 
         let dist = Distribution::Int(IntDistribution {
             low: 0,
@@ -968,14 +1013,14 @@ mod tests {
             .map(|i| {
                 create_trial(
                     i as u64,
-                    i as f64,
-                    vec![("x", ParamValue::Float(i as f64 / 20.0), dist.clone())],
+                    f64::from(i),
+                    vec![("x", ParamValue::Float(f64::from(i) / 20.0), dist.clone())],
                 )
             })
             .collect();
 
-        let sampler1 = TpeSampler::with_config(0.25, 5, 24, None, Some(12345));
-        let sampler2 = TpeSampler::with_config(0.25, 5, 24, None, Some(12345));
+        let sampler1 = TpeSampler::with_config(0.25, 5, 24, None, Some(12345)).unwrap();
+        let sampler2 = TpeSampler::with_config(0.25, 5, 24, None, Some(12345)).unwrap();
 
         for i in 0..10 {
             let v1 = sampler1.sample(&dist, i, &history);
@@ -987,8 +1032,8 @@ mod tests {
     #[test]
     fn test_tpe_sampler_builder_default() {
         let builder = TpeSamplerBuilder::new();
-        let sampler = builder.build();
-        assert_eq!(sampler.gamma, 0.25);
+        let sampler = builder.build().unwrap();
+        assert!((sampler.gamma - 0.25).abs() < f64::EPSILON);
         assert_eq!(sampler.n_startup_trials, 10);
         assert_eq!(sampler.n_ei_candidates, 24);
     }
@@ -1000,8 +1045,9 @@ mod tests {
             .n_startup_trials(20)
             .n_ei_candidates(32)
             .seed(42)
-            .build();
-        assert_eq!(sampler.gamma, 0.15);
+            .build()
+            .unwrap();
+        assert!((sampler.gamma - 0.15).abs() < f64::EPSILON);
         assert_eq!(sampler.n_startup_trials, 20);
         assert_eq!(sampler.n_ei_candidates, 32);
     }
@@ -1012,8 +1058,9 @@ mod tests {
             .gamma(0.10)
             .n_startup_trials(15)
             .n_ei_candidates(48)
-            .build();
-        assert_eq!(sampler.gamma, 0.10);
+            .build()
+            .unwrap();
+        assert!((sampler.gamma - 0.10).abs() < f64::EPSILON);
         assert_eq!(sampler.n_startup_trials, 15);
         assert_eq!(sampler.n_ei_candidates, 48);
     }
@@ -1021,16 +1068,16 @@ mod tests {
     #[test]
     fn test_tpe_sampler_builder_partial() {
         // Test setting only some options
-        let sampler = TpeSamplerBuilder::new().gamma(0.20).build();
-        assert_eq!(sampler.gamma, 0.20);
+        let sampler = TpeSamplerBuilder::new().gamma(0.20).build().unwrap();
+        assert!((sampler.gamma - 0.20).abs() < f64::EPSILON);
         assert_eq!(sampler.n_startup_trials, 10); // default
         assert_eq!(sampler.n_ei_candidates, 24); // default
     }
 
     #[test]
-    #[should_panic(expected = "gamma must be in (0.0, 1.0)")]
     fn test_tpe_sampler_builder_invalid_gamma() {
-        TpeSamplerBuilder::new().gamma(1.5).build();
+        let result = TpeSamplerBuilder::new().gamma(1.5).build();
+        assert!(matches!(result, Err(TpeError::InvalidGamma(_))));
     }
 
     #[test]
@@ -1042,12 +1089,12 @@ mod tests {
             step: None,
         });
 
-        let history: Vec<CompletedTrial> = (0..20)
+        let history: Vec<CompletedTrial> = (0..20u32)
             .map(|i| {
                 create_trial(
-                    i as u64,
-                    i as f64,
-                    vec![("x", ParamValue::Float(i as f64 / 20.0), dist.clone())],
+                    u64::from(i),
+                    f64::from(i),
+                    vec![("x", ParamValue::Float(f64::from(i) / 20.0), dist.clone())],
                 )
             })
             .collect();
@@ -1055,11 +1102,13 @@ mod tests {
         let sampler1 = TpeSampler::builder()
             .seed(99999)
             .n_startup_trials(5)
-            .build();
+            .build()
+            .unwrap();
         let sampler2 = TpeSampler::builder()
             .seed(99999)
             .n_startup_trials(5)
-            .build();
+            .build()
+            .unwrap();
 
         for i in 0..10 {
             let v1 = sampler1.sample(&dist, i, &history);

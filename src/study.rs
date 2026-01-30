@@ -1,14 +1,15 @@
 //! Study implementation for managing optimization trials.
 
 #[cfg(feature = "async")]
-use std::future::Future;
-use std::ops::ControlFlow;
+use core::future::Future;
+use core::ops::ControlFlow;
+use core::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use parking_lot::RwLock;
 
-use crate::sampler::{CompletedTrial, RandomSampler, Sampler};
+use crate::sampler::random::RandomSampler;
+use crate::sampler::{CompletedTrial, Sampler};
 use crate::trial::Trial;
 use crate::types::Direction;
 
@@ -64,6 +65,7 @@ where
     /// let study: Study<f64> = Study::new(Direction::Minimize);
     /// assert_eq!(study.direction(), Direction::Minimize);
     /// ```
+    #[must_use]
     pub fn new(direction: Direction) -> Self {
         Self::with_sampler(direction, RandomSampler::new())
     }
@@ -78,7 +80,8 @@ where
     /// # Examples
     ///
     /// ```
-    /// use optimizer::{Direction, RandomSampler, Study};
+    /// use optimizer::sampler::random::RandomSampler;
+    /// use optimizer::{Direction, Study};
     ///
     /// let sampler = RandomSampler::with_seed(42);
     /// let study: Study<f64> = Study::with_sampler(Direction::Maximize, sampler);
@@ -107,7 +110,8 @@ where
     /// # Examples
     ///
     /// ```
-    /// use optimizer::{Direction, Study, TpeSampler};
+    /// use optimizer::sampler::tpe::TpeSampler;
+    /// use optimizer::{Direction, Study};
     ///
     /// let mut study: Study<f64> = Study::new(Direction::Minimize);
     /// study.set_sampler(TpeSampler::new());
@@ -313,17 +317,15 @@ where
                 match self.direction {
                     Direction::Minimize => {
                         // Reverse ordering: smaller values are "greater" for max_by
-                        ordering
-                            .map(|o| o.reverse())
-                            .unwrap_or(std::cmp::Ordering::Equal)
+                        ordering.map_or(core::cmp::Ordering::Equal, core::cmp::Ordering::reverse)
                     }
                     Direction::Maximize => {
                         // Normal ordering: larger values are "greater" for max_by
-                        ordering.unwrap_or(std::cmp::Ordering::Equal)
+                        ordering.unwrap_or(core::cmp::Ordering::Equal)
                     }
                 }
             })
-            .expect("trials is not empty");
+            .ok_or(crate::TpeError::NoCompletedTrials)?;
 
         Ok(best.clone())
     }
@@ -390,7 +392,8 @@ where
     /// # Examples
     ///
     /// ```
-    /// use optimizer::{Direction, RandomSampler, Study};
+    /// use optimizer::sampler::random::RandomSampler;
+    /// use optimizer::{Direction, Study};
     ///
     /// // Minimize x^2
     /// let sampler = RandomSampler::with_seed(42);
@@ -410,7 +413,7 @@ where
     /// ```
     pub fn optimize<F, E>(&self, n_trials: usize, mut objective: F) -> crate::Result<()>
     where
-        F: FnMut(&mut Trial) -> std::result::Result<V, E>,
+        F: FnMut(&mut Trial) -> core::result::Result<V, E>,
         E: ToString,
     {
         for _ in 0..n_trials {
@@ -457,7 +460,8 @@ where
     /// # Examples
     ///
     /// ```
-    /// use optimizer::{Direction, RandomSampler, Study};
+    /// use optimizer::sampler::random::RandomSampler;
+    /// use optimizer::{Direction, Study};
     ///
     /// # #[cfg(feature = "async")]
     /// # async fn example() -> optimizer::Result<()> {
@@ -487,7 +491,7 @@ where
     ) -> crate::Result<()>
     where
         F: Fn(Trial) -> Fut,
-        Fut: Future<Output = std::result::Result<(Trial, V), E>>,
+        Fut: Future<Output = core::result::Result<(Trial, V), E>>,
         E: ToString,
     {
         for _ in 0..n_trials {
@@ -533,11 +537,13 @@ where
     /// # Errors
     ///
     /// Returns `TpeError::NoCompletedTrials` if all trials failed (no successful trials).
+    /// Returns `TpeError::TaskError` if the semaphore is closed or a spawned task panics.
     ///
     /// # Examples
     ///
     /// ```
-    /// use optimizer::{Direction, RandomSampler, Study};
+    /// use optimizer::sampler::random::RandomSampler;
+    /// use optimizer::{Direction, Study};
     ///
     /// # #[cfg(feature = "async")]
     /// # async fn example() -> optimizer::Result<()> {
@@ -568,7 +574,7 @@ where
     ) -> crate::Result<()>
     where
         F: Fn(Trial) -> Fut + Send + Sync + 'static,
-        Fut: Future<Output = std::result::Result<(Trial, V), E>> + Send,
+        Fut: Future<Output = core::result::Result<(Trial, V), E>> + Send,
         E: ToString + Send + 'static,
         V: Send + 'static,
     {
@@ -580,7 +586,11 @@ where
         let mut handles = Vec::with_capacity(n_trials);
 
         for _ in 0..n_trials {
-            let permit = semaphore.clone().acquire_owned().await.unwrap();
+            let permit = semaphore
+                .clone()
+                .acquire_owned()
+                .await
+                .map_err(|e| crate::TpeError::TaskError(e.to_string()))?;
             let trial = self.create_trial();
             let objective = Arc::clone(&objective);
 
@@ -595,7 +605,10 @@ where
 
         // Wait for all tasks and record results
         for handle in handles {
-            match handle.await.unwrap() {
+            match handle
+                .await
+                .map_err(|e| crate::TpeError::TaskError(e.to_string()))?
+            {
                 Ok((trial, value)) => {
                     self.complete_trial(trial, value);
                 }
@@ -632,13 +645,15 @@ where
     ///
     /// Returns `TpeError::NoCompletedTrials` if no trials completed successfully
     /// before optimization stopped (either by completing all trials or early stopping).
+    /// Returns `TpeError::Internal` if a completed trial is not found after adding (internal invariant violation).
     ///
     /// # Examples
     ///
     /// ```
     /// use std::ops::ControlFlow;
     ///
-    /// use optimizer::{Direction, RandomSampler, Study};
+    /// use optimizer::sampler::random::RandomSampler;
+    /// use optimizer::{Direction, Study};
     ///
     /// // Stop early when we find a good enough value
     /// let sampler = RandomSampler::with_seed(42);
@@ -673,7 +688,7 @@ where
     ) -> crate::Result<()>
     where
         V: Clone,
-        F: FnMut(&mut Trial) -> std::result::Result<V, E>,
+        F: FnMut(&mut Trial) -> core::result::Result<V, E>,
         C: FnMut(&Study<V>, &CompletedTrial<V>) -> ControlFlow<()>,
         E: ToString,
     {
@@ -686,7 +701,11 @@ where
 
                     // Get the just-completed trial for the callback
                     let trials = self.completed_trials.read();
-                    let completed = trials.last().expect("just added a trial");
+                    let Some(completed) = trials.last() else {
+                        return Err(crate::TpeError::Internal(
+                            "completed trial not found after adding",
+                        ));
+                    };
 
                     // Call the callback and check if we should stop
                     // Note: We need to drop the read lock before calling callback
@@ -727,7 +746,8 @@ impl Study<f64> {
     /// # Examples
     ///
     /// ```
-    /// use optimizer::{Direction, RandomSampler, Study};
+    /// use optimizer::sampler::random::RandomSampler;
+    /// use optimizer::{Direction, Study};
     ///
     /// // With a seeded sampler for reproducibility
     /// let sampler = RandomSampler::with_seed(42);
@@ -768,7 +788,8 @@ impl Study<f64> {
     /// # Examples
     ///
     /// ```
-    /// use optimizer::{Direction, RandomSampler, Study};
+    /// use optimizer::sampler::random::RandomSampler;
+    /// use optimizer::{Direction, Study};
     ///
     /// // Minimize x^2 with sampler integration
     /// let sampler = RandomSampler::with_seed(42);
@@ -790,7 +811,7 @@ impl Study<f64> {
         mut objective: F,
     ) -> crate::Result<()>
     where
-        F: FnMut(&mut Trial) -> std::result::Result<f64, E>,
+        F: FnMut(&mut Trial) -> core::result::Result<f64, E>,
         E: ToString,
     {
         for _ in 0..n_trials {
@@ -831,13 +852,15 @@ impl Study<f64> {
     /// # Errors
     ///
     /// Returns `TpeError::NoCompletedTrials` if no trials completed successfully.
+    /// Returns `TpeError::Internal` if a completed trial is not found after adding (internal invariant violation).
     ///
     /// # Examples
     ///
     /// ```
     /// use std::ops::ControlFlow;
     ///
-    /// use optimizer::{Direction, RandomSampler, Study};
+    /// use optimizer::sampler::random::RandomSampler;
+    /// use optimizer::{Direction, Study};
     ///
     /// // Optimize with sampler integration and early stopping
     /// let sampler = RandomSampler::with_seed(42);
@@ -870,7 +893,7 @@ impl Study<f64> {
         mut callback: C,
     ) -> crate::Result<()>
     where
-        F: FnMut(&mut Trial) -> std::result::Result<f64, E>,
+        F: FnMut(&mut Trial) -> core::result::Result<f64, E>,
         C: FnMut(&Study<f64>, &CompletedTrial<f64>) -> ControlFlow<()>,
         E: ToString,
     {
@@ -883,7 +906,11 @@ impl Study<f64> {
 
                     // Get the just-completed trial for the callback
                     let trials = self.completed_trials.read();
-                    let completed = trials.last().expect("just added a trial");
+                    let Some(completed) = trials.last() else {
+                        return Err(crate::TpeError::Internal(
+                            "completed trial not found after adding",
+                        ));
+                    };
 
                     // Call the callback and check if we should stop
                     // Note: We need to drop the read lock before calling callback
@@ -931,7 +958,8 @@ impl Study<f64> {
     /// # Examples
     ///
     /// ```
-    /// use optimizer::{Direction, RandomSampler, Study};
+    /// use optimizer::sampler::random::RandomSampler;
+    /// use optimizer::{Direction, Study};
     ///
     /// # #[cfg(feature = "async")]
     /// # async fn example() -> optimizer::Result<()> {
@@ -961,7 +989,7 @@ impl Study<f64> {
     ) -> crate::Result<()>
     where
         F: Fn(Trial) -> Fut,
-        Fut: Future<Output = std::result::Result<(Trial, f64), E>>,
+        Fut: Future<Output = core::result::Result<(Trial, f64), E>>,
         E: ToString,
     {
         for _ in 0..n_trials {
@@ -1007,11 +1035,13 @@ impl Study<f64> {
     /// # Errors
     ///
     /// Returns `TpeError::NoCompletedTrials` if all trials failed (no successful trials).
+    /// Returns `TpeError::TaskError` if the semaphore is closed or a spawned task panics.
     ///
     /// # Examples
     ///
     /// ```
-    /// use optimizer::{Direction, RandomSampler, Study};
+    /// use optimizer::sampler::random::RandomSampler;
+    /// use optimizer::{Direction, Study};
     ///
     /// # #[cfg(feature = "async")]
     /// # async fn example() -> optimizer::Result<()> {
@@ -1042,7 +1072,7 @@ impl Study<f64> {
     ) -> crate::Result<()>
     where
         F: Fn(Trial) -> Fut + Send + Sync + 'static,
-        Fut: Future<Output = std::result::Result<(Trial, f64), E>> + Send,
+        Fut: Future<Output = core::result::Result<(Trial, f64), E>> + Send,
         E: ToString + Send + 'static,
     {
         use tokio::sync::Semaphore;
@@ -1053,7 +1083,11 @@ impl Study<f64> {
         let mut handles = Vec::with_capacity(n_trials);
 
         for _ in 0..n_trials {
-            let permit = semaphore.clone().acquire_owned().await.unwrap();
+            let permit = semaphore
+                .clone()
+                .acquire_owned()
+                .await
+                .map_err(|e| crate::TpeError::TaskError(e.to_string()))?;
             let trial = self.create_trial_with_sampler();
             let objective = Arc::clone(&objective);
 
@@ -1068,7 +1102,10 @@ impl Study<f64> {
 
         // Wait for all tasks and record results
         for handle in handles {
-            match handle.await.unwrap() {
+            match handle
+                .await
+                .map_err(|e| crate::TpeError::TaskError(e.to_string()))?
+            {
                 Ok((trial, value)) => {
                     self.complete_trial(trial, value);
                 }
