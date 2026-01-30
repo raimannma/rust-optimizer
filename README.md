@@ -12,7 +12,6 @@ A Rust library for black-box optimization using Tree-Parzen Estimator (TPE).
 - Float, integer, and categorical parameter types
 - Log-scale and stepped parameter sampling
 - Sync and async optimization with parallel trial evaluation
-- Serialization support for saving/loading study state
 
 ## Quick Start
 
@@ -35,7 +34,6 @@ println!("Best value: {} at x={:?}", best.value, best.params);
 
 ## Feature Flags
 
-- `serde` - Enable serialization/deserialization of studies and trials
 - `async` - Enable async optimization methods (requires tokio)
 
 ## Documentation

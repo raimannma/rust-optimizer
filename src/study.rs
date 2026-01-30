@@ -7,18 +7,10 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use parking_lot::RwLock;
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
 
 use crate::sampler::{CompletedTrial, RandomSampler, Sampler};
 use crate::trial::Trial;
 use crate::types::Direction;
-
-/// Helper function to create default sampler for serde deserialization.
-#[cfg(feature = "serde")]
-fn default_sampler() -> Arc<dyn Sampler> {
-    Arc::new(RandomSampler::new())
-}
 
 /// A study manages the optimization process, tracking trials and their results.
 ///
@@ -28,13 +20,6 @@ fn default_sampler() -> Arc<dyn Sampler> {
 ///
 /// When `V = f64`, the study passes trial history to the sampler for informed
 /// parameter suggestions (e.g., TPE sampler uses history to guide sampling).
-///
-/// # Serialization
-///
-/// When the `serde` feature is enabled, the study can be serialized and deserialized.
-/// The completed trials and trial ID counter are preserved, allowing optimization to
-/// continue after deserialization. The sampler is not serialized; upon deserialization,
-/// a default `RandomSampler` is used. Use `Study::set_sampler()` to restore a custom sampler.
 ///
 /// # Examples
 ///
@@ -115,9 +100,6 @@ where
 
     /// Sets a new sampler for the study.
     ///
-    /// This method is useful after deserializing a study when you want to use
-    /// a custom sampler (e.g., TPE) instead of the default `RandomSampler`.
-    ///
     /// # Arguments
     ///
     /// * `sampler` - The sampler to use for parameter sampling.
@@ -127,7 +109,6 @@ where
     /// ```
     /// use optimizer::{Direction, Study, TpeSampler};
     ///
-    /// // After deserializing a study, restore the TPE sampler
     /// let mut study: Study<f64> = Study::new(Direction::Minimize);
     /// study.set_sampler(TpeSampler::new());
     /// ```
@@ -1103,238 +1084,5 @@ impl Study<f64> {
         }
 
         Ok(())
-    }
-}
-
-// Manual Serialize implementation for Study<V> when serde feature is enabled.
-#[cfg(feature = "serde")]
-impl<V> Serialize for Study<V>
-where
-    V: PartialOrd + Serialize,
-{
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        use serde::ser::SerializeStruct;
-
-        let mut state = serializer.serialize_struct("Study", 3)?;
-        state.serialize_field("direction", &self.direction)?;
-        // Serialize the Vec inside the Arc<RwLock<>>
-        let trials = self.completed_trials.read();
-        state.serialize_field("completed_trials", &*trials)?;
-        state.serialize_field("next_trial_id", &self.next_trial_id.load(Ordering::SeqCst))?;
-        state.end()
-    }
-}
-
-// Manual Deserialize implementation for Study<V> when serde feature is enabled.
-#[cfg(feature = "serde")]
-impl<'de, V> Deserialize<'de> for Study<V>
-where
-    V: PartialOrd + Deserialize<'de>,
-{
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        use std::fmt;
-        use std::marker::PhantomData;
-
-        use serde::de::{self, MapAccess, Visitor};
-
-        #[derive(serde::Deserialize)]
-        #[serde(field_identifier, rename_all = "snake_case")]
-        enum Field {
-            Direction,
-            CompletedTrials,
-            NextTrialId,
-        }
-
-        struct StudyVisitor<V>(PhantomData<V>);
-
-        impl<'de, V> Visitor<'de> for StudyVisitor<V>
-        where
-            V: PartialOrd + Deserialize<'de>,
-        {
-            type Value = Study<V>;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("struct Study")
-            }
-
-            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
-            where
-                A: MapAccess<'de>,
-            {
-                let mut direction = None;
-                let mut completed_trials: Option<Vec<CompletedTrial<V>>> = None;
-                let mut next_trial_id = None;
-
-                while let Some(key) = map.next_key()? {
-                    match key {
-                        Field::Direction => {
-                            if direction.is_some() {
-                                return Err(de::Error::duplicate_field("direction"));
-                            }
-                            direction = Some(map.next_value()?);
-                        }
-                        Field::CompletedTrials => {
-                            if completed_trials.is_some() {
-                                return Err(de::Error::duplicate_field("completed_trials"));
-                            }
-                            completed_trials = Some(map.next_value()?);
-                        }
-                        Field::NextTrialId => {
-                            if next_trial_id.is_some() {
-                                return Err(de::Error::duplicate_field("next_trial_id"));
-                            }
-                            next_trial_id = Some(map.next_value()?);
-                        }
-                    }
-                }
-
-                let direction = direction.ok_or_else(|| de::Error::missing_field("direction"))?;
-                let completed_trials =
-                    completed_trials.ok_or_else(|| de::Error::missing_field("completed_trials"))?;
-                let next_trial_id: u64 =
-                    next_trial_id.ok_or_else(|| de::Error::missing_field("next_trial_id"))?;
-
-                Ok(Study {
-                    direction,
-                    sampler: default_sampler(),
-                    completed_trials: Arc::new(RwLock::new(completed_trials)),
-                    next_trial_id: AtomicU64::new(next_trial_id),
-                })
-            }
-        }
-
-        const FIELDS: &[&str] = &["direction", "completed_trials", "next_trial_id"];
-        deserializer.deserialize_struct("Study", FIELDS, StudyVisitor(PhantomData))
-    }
-}
-
-#[cfg(all(test, feature = "serde"))]
-mod serde_tests {
-    use super::*;
-
-    #[test]
-    fn test_study_serde_round_trip() {
-        // Create a study and add some trials
-        let study: Study<f64> = Study::new(Direction::Minimize);
-
-        // Run some optimization
-        study
-            .optimize(5, |trial| {
-                let x = trial.suggest_float("x", 0.0, 10.0)?;
-                let y = trial.suggest_int("y", 1, 5)?;
-                Ok::<_, crate::TpeError>(x + y as f64)
-            })
-            .unwrap();
-
-        // Serialize to JSON
-        let serialized = serde_json::to_string(&study).unwrap();
-
-        // Deserialize from JSON
-        let deserialized: Study<f64> = serde_json::from_str(&serialized).unwrap();
-
-        // Verify the data is preserved
-        assert_eq!(deserialized.direction(), study.direction());
-        assert_eq!(deserialized.n_trials(), study.n_trials());
-
-        // Verify the best trial is the same
-        let original_best = study.best_trial().unwrap();
-        let deserialized_best = deserialized.best_trial().unwrap();
-        assert_eq!(original_best.id, deserialized_best.id);
-        // Use approximate comparison for floats due to JSON serialization precision
-        assert!((original_best.value - deserialized_best.value).abs() < 1e-10);
-        // Check that all param keys match
-        assert_eq!(original_best.params.len(), deserialized_best.params.len());
-        for (key, original_val) in &original_best.params {
-            let deserialized_val = deserialized_best.params.get(key).unwrap();
-            match (original_val, deserialized_val) {
-                (crate::param::ParamValue::Float(a), crate::param::ParamValue::Float(b)) => {
-                    assert!((a - b).abs() < 1e-10, "Float param {key} differs");
-                }
-                _ => assert_eq!(original_val, deserialized_val),
-            }
-        }
-
-        // Verify we can continue optimization on the deserialized study
-        let initial_count = deserialized.n_trials();
-        deserialized
-            .optimize(3, |trial| {
-                let x = trial.suggest_float("x", 0.0, 10.0)?;
-                let y = trial.suggest_int("y", 1, 5)?;
-                Ok::<_, crate::TpeError>(x + y as f64)
-            })
-            .unwrap();
-
-        // Verify new trials were added
-        assert_eq!(deserialized.n_trials(), initial_count + 3);
-    }
-
-    #[test]
-    fn test_study_serde_preserves_trial_ids() {
-        let study: Study<f64> = Study::new(Direction::Maximize);
-
-        // Add 5 trials
-        study
-            .optimize(5, |trial| {
-                let x = trial.suggest_float("x", -1.0, 1.0)?;
-                Ok::<_, crate::TpeError>(x * x)
-            })
-            .unwrap();
-
-        // Serialize and deserialize
-        let serialized = serde_json::to_string(&study).unwrap();
-        let deserialized: Study<f64> = serde_json::from_str(&serialized).unwrap();
-
-        // Create a new trial - its ID should continue from where we left off
-        let new_trial = deserialized.create_trial();
-        assert_eq!(new_trial.id(), 5); // Next trial should be ID 5
-    }
-
-    #[test]
-    fn test_completed_trial_serde() {
-        use std::collections::HashMap;
-
-        use crate::distribution::{Distribution, FloatDistribution, IntDistribution};
-        use crate::param::ParamValue;
-
-        let mut params = HashMap::new();
-        params.insert("x".to_string(), ParamValue::Float(0.5));
-        params.insert("n".to_string(), ParamValue::Int(42));
-
-        let mut distributions = HashMap::new();
-        distributions.insert(
-            "x".to_string(),
-            Distribution::Float(FloatDistribution {
-                low: 0.0,
-                high: 1.0,
-                log_scale: false,
-                step: None,
-            }),
-        );
-        distributions.insert(
-            "n".to_string(),
-            Distribution::Int(IntDistribution {
-                low: 1,
-                high: 100,
-                log_scale: false,
-                step: None,
-            }),
-        );
-
-        let completed = CompletedTrial::new(42, params.clone(), distributions.clone(), 0.75);
-
-        // Serialize and deserialize
-        let serialized = serde_json::to_string(&completed).unwrap();
-        let deserialized: CompletedTrial<f64> = serde_json::from_str(&serialized).unwrap();
-
-        assert_eq!(deserialized.id, 42);
-        assert_eq!(deserialized.value, 0.75);
-        assert_eq!(deserialized.params, params);
-        assert_eq!(deserialized.distributions, distributions);
     }
 }
