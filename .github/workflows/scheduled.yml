@@ -1,0 +1,52 @@
+name: Scheduled
+
+on:
+  schedule:
+    - cron: "0 6 * * *" # Daily at 6:00 UTC
+  workflow_dispatch: # Allow manual trigger
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # Check if crate compiles on beta/nightly with current Cargo.lock
+  rust-channels:
+    name: Rust ${{ matrix.rust }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        rust: [beta, nightly]
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install Rust ${{ matrix.rust }}
+        run: |
+          rustup override set ${{ matrix.rust }}
+          rustup update ${{ matrix.rust }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Check compilation
+        run: cargo check --all-features --all-targets
+      - name: Run tests
+        run: cargo test --all-features
+
+  # Check if crate compiles with latest dependencies
+  latest-deps:
+    name: Latest Deps (${{ matrix.rust }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        rust: [stable, beta, nightly]
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install Rust ${{ matrix.rust }}
+        run: |
+          rustup override set ${{ matrix.rust }}
+          rustup update ${{ matrix.rust }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Update dependencies
+        run: cargo update
+      - name: Check compilation
+        run: cargo check --all-features --all-targets
+      - name: Run tests
+        run: cargo test --all-features
