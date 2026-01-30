@@ -1,3 +1,14 @@
+#![forbid(unsafe_code)]
+#![deny(clippy::all)]
+#![deny(unreachable_pub)]
+#![deny(clippy::correctness)]
+#![deny(clippy::suspicious)]
+#![deny(clippy::style)]
+#![deny(clippy::complexity)]
+#![deny(clippy::perf)]
+#![deny(clippy::pedantic)]
+#![deny(clippy::std_instead_of_core)]
+
 //! A Tree-Parzen Estimator (TPE) library for black-box optimization.
 //!
 //! This library provides an Optuna-like API for hyperparameter optimization
@@ -11,10 +22,11 @@
 //! # Quick Start
 //!
 //! ```
-//! use optimizer::{Direction, Study, TpeSampler};
+//! use optimizer::sampler::tpe::TpeSampler;
+//! use optimizer::{Direction, Study};
 //!
 //! // Create a study with TPE sampler
-//! let sampler = TpeSampler::builder().seed(42).build();
+//! let sampler = TpeSampler::builder().seed(42).build().unwrap();
 //! let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
 //!
 //! // Optimize x^2 for 20 trials
@@ -35,7 +47,9 @@
 //! A [`Study`] manages optimization trials. Create one with an optimization direction:
 //!
 //! ```
-//! use optimizer::{Direction, RandomSampler, Study, TpeSampler};
+//! use optimizer::sampler::random::RandomSampler;
+//! use optimizer::sampler::tpe::TpeSampler;
+//! use optimizer::{Direction, Study};
 //!
 //! // Minimize with default random sampler
 //! let study: Study<f64> = Study::new(Direction::Minimize);
@@ -79,17 +93,18 @@
 //!
 //! # Configuring TPE
 //!
-//! The [`TpeSampler`] can be configured using the builder pattern:
+//! The [`sampler::tpe::TpeSampler`] can be configured using the builder pattern:
 //!
 //! ```
-//! use optimizer::TpeSampler;
+//! use optimizer::sampler::tpe::TpeSampler;
 //!
 //! let sampler = TpeSampler::builder()
 //!     .gamma(0.15)           // Quantile for good/bad split
 //!     .n_startup_trials(20)  // Random trials before TPE
 //!     .n_ei_candidates(32)   // Candidates to evaluate
 //!     .seed(42)              // Reproducibility
-//!     .build();
+//!     .build()
+//!     .unwrap();
 //! ```
 //!
 //! # Async and Parallel Optimization
@@ -120,13 +135,13 @@ mod distribution;
 mod error;
 mod kde;
 mod param;
-mod sampler;
+pub mod sampler;
 mod study;
 mod trial;
 mod types;
 
 pub use error::{Result, TpeError};
-pub use sampler::{CompletedTrial, RandomSampler, Sampler, TpeSampler, TpeSamplerBuilder};
+pub use param::ParamValue;
 pub use study::Study;
 pub use trial::Trial;
 pub use types::{Direction, TrialState};

@@ -1,6 +1,14 @@
 //! Integration tests for the optimizer library.
 
-use optimizer::{Direction, RandomSampler, Study, TpeError, TpeSampler, Trial};
+#![allow(
+    clippy::cast_sign_loss,
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation
+)]
+
+use optimizer::sampler::random::RandomSampler;
+use optimizer::sampler::tpe::TpeSampler;
+use optimizer::{Direction, Study, TpeError, Trial};
 
 // =============================================================================
 // Test: optimize simple quadratic function with TPE, finds near-optimal
@@ -14,7 +22,8 @@ fn test_tpe_optimizes_quadratic_function() {
         .seed(42)
         .n_startup_trials(5) // Quick startup for test
         .n_ei_candidates(24)
-        .build();
+        .build()
+        .unwrap();
 
     let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
 
@@ -40,7 +49,11 @@ fn test_tpe_optimizes_quadratic_function() {
 fn test_tpe_optimizes_multivariate_function() {
     // Minimize f(x, y) = x^2 + y^2 where x, y ∈ [-5, 5]
     // Optimal: (0, 0), f(0, 0) = 0
-    let sampler = TpeSampler::builder().seed(123).n_startup_trials(10).build();
+    let sampler = TpeSampler::builder()
+        .seed(123)
+        .n_startup_trials(10)
+        .build()
+        .unwrap();
 
     let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
 
@@ -66,7 +79,11 @@ fn test_tpe_optimizes_multivariate_function() {
 fn test_tpe_maximization() {
     // Maximize f(x) = -(x - 2)^2 + 10 where x ∈ [-10, 10]
     // Optimal: x = 2, f(2) = 10
-    let sampler = TpeSampler::builder().seed(456).n_startup_trials(5).build();
+    let sampler = TpeSampler::builder()
+        .seed(456)
+        .n_startup_trials(5)
+        .build()
+        .unwrap();
 
     let study: Study<f64> = Study::with_sampler(Direction::Maximize, sampler);
 
@@ -550,7 +567,11 @@ fn test_invalid_step_errors() {
 
 #[test]
 fn test_tpe_with_categorical_parameter() {
-    let sampler = TpeSampler::builder().seed(42).n_startup_trials(5).build();
+    let sampler = TpeSampler::builder()
+        .seed(42)
+        .n_startup_trials(5)
+        .build()
+        .unwrap();
 
     let study: Study<f64> = Study::with_sampler(Direction::Maximize, sampler);
 
@@ -582,7 +603,11 @@ fn test_tpe_with_categorical_parameter() {
 
 #[test]
 fn test_tpe_with_integer_parameters() {
-    let sampler = TpeSampler::builder().seed(789).n_startup_trials(5).build();
+    let sampler = TpeSampler::builder()
+        .seed(789)
+        .n_startup_trials(5)
+        .build()
+        .unwrap();
 
     let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
 
@@ -756,7 +781,11 @@ fn test_study_set_sampler() {
     let mut study: Study<f64> = Study::new(Direction::Minimize);
 
     // Initially uses RandomSampler, now switch to TPE
-    let tpe = TpeSampler::builder().seed(42).n_startup_trials(5).build();
+    let tpe = TpeSampler::builder()
+        .seed(42)
+        .n_startup_trials(5)
+        .build()
+        .unwrap();
     study.set_sampler(tpe);
 
     // Should work with the new sampler
@@ -863,10 +892,10 @@ fn test_trial_debug_format() {
 
 #[test]
 fn test_tpe_sampler_builder_default_trait() {
-    use optimizer::TpeSamplerBuilder;
+    use optimizer::sampler::tpe::TpeSamplerBuilder;
 
     let builder = TpeSamplerBuilder::default();
-    let sampler = builder.build();
+    let sampler = builder.build().unwrap();
 
     // Should have default values
     let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
@@ -901,7 +930,8 @@ fn test_tpe_with_fixed_kde_bandwidth() {
         .seed(42)
         .n_startup_trials(5)
         .kde_bandwidth(0.5)
-        .build();
+        .build()
+        .unwrap();
 
     let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
 
@@ -917,9 +947,9 @@ fn test_tpe_with_fixed_kde_bandwidth() {
 }
 
 #[test]
-#[should_panic(expected = "kde_bandwidth must be positive")]
 fn test_tpe_sampler_invalid_kde_bandwidth() {
-    TpeSampler::with_config(0.25, 10, 24, Some(-1.0), None);
+    let result = TpeSampler::with_config(0.25, 10, 24, Some(-1.0), None);
+    assert!(matches!(result, Err(TpeError::InvalidBandwidth(_))));
 }
 
 #[test]
@@ -928,7 +958,8 @@ fn test_tpe_split_trials_with_two_trials() {
     let sampler = TpeSampler::builder()
         .seed(42)
         .n_startup_trials(2) // TPE kicks in after 2 trials
-        .build();
+        .build()
+        .unwrap();
 
     let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
 
@@ -944,7 +975,11 @@ fn test_tpe_split_trials_with_two_trials() {
 
 #[test]
 fn test_tpe_with_log_scale_int() {
-    let sampler = TpeSampler::builder().seed(42).n_startup_trials(5).build();
+    let sampler = TpeSampler::builder()
+        .seed(42)
+        .n_startup_trials(5)
+        .build()
+        .unwrap();
 
     let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
 
@@ -962,7 +997,11 @@ fn test_tpe_with_log_scale_int() {
 
 #[test]
 fn test_tpe_with_step_distributions() {
-    let sampler = TpeSampler::builder().seed(42).n_startup_trials(5).build();
+    let sampler = TpeSampler::builder()
+        .seed(42)
+        .n_startup_trials(5)
+        .build()
+        .unwrap();
 
     let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
 
@@ -1040,7 +1079,8 @@ fn test_tpe_empty_good_or_bad_values_fallback() {
         .seed(42)
         .n_startup_trials(5)
         .gamma(0.1) // Very small gamma means few "good" trials
-        .build();
+        .build()
+        .unwrap();
 
     let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
 

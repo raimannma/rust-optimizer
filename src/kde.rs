@@ -5,6 +5,8 @@
 
 use rand::Rng;
 
+use crate::error::{Result, TpeError};
+
 /// A Gaussian kernel density estimator for continuous distributions.
 ///
 /// KDE estimates a probability density function from a set of samples by
@@ -28,7 +30,7 @@ use rand::Rng;
 /// let sample = kde.sample(&mut rng);
 /// ```
 #[derive(Clone, Debug)]
-pub struct KernelDensityEstimator {
+pub(crate) struct KernelDensityEstimator {
     /// The sample points used to construct the KDE.
     samples: Vec<f64>,
     /// The bandwidth (standard deviation) of the Gaussian kernels.
@@ -38,37 +40,45 @@ pub struct KernelDensityEstimator {
 impl KernelDensityEstimator {
     /// Creates a new KDE with automatic bandwidth selection using Scott's rule.
     ///
-    /// Scott's rule sets bandwidth = n^(-1/5) * std_dev, which works well
+    /// Scott's rule sets bandwidth = n^(-1/5) * `std_dev`, which works well
     /// for unimodal distributions close to normal.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if `samples` is empty.
-    pub fn new(samples: Vec<f64>) -> Self {
-        assert!(!samples.is_empty(), "KDE requires at least one sample");
+    /// Returns `TpeError::EmptySamples` if `samples` is empty.
+    pub(crate) fn new(samples: Vec<f64>) -> Result<Self> {
+        if samples.is_empty() {
+            return Err(TpeError::EmptySamples);
+        }
 
         let bandwidth = Self::scotts_rule(&samples);
-        Self { samples, bandwidth }
+        Ok(Self { samples, bandwidth })
     }
 
     /// Creates a new KDE with a specified bandwidth.
     ///
     /// Use this when you want explicit control over the smoothing parameter.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if `samples` is empty or `bandwidth` is not positive.
-    pub(crate) fn with_bandwidth(samples: Vec<f64>, bandwidth: f64) -> Self {
-        assert!(!samples.is_empty(), "KDE requires at least one sample");
-        assert!(bandwidth > 0.0, "Bandwidth must be positive");
+    /// Returns `TpeError::EmptySamples` if `samples` is empty.
+    /// Returns `TpeError::InvalidBandwidth` if `bandwidth` is not positive.
+    pub(crate) fn with_bandwidth(samples: Vec<f64>, bandwidth: f64) -> Result<Self> {
+        if samples.is_empty() {
+            return Err(TpeError::EmptySamples);
+        }
+        if bandwidth <= 0.0 {
+            return Err(TpeError::InvalidBandwidth(bandwidth));
+        }
 
-        Self { samples, bandwidth }
+        Ok(Self { samples, bandwidth })
     }
 
     /// Computes bandwidth using Scott's rule.
     ///
     /// Scott's rule: h = n^(-1/5) * sigma
     /// where sigma is the sample standard deviation.
+    #[allow(clippy::cast_precision_loss)]
     fn scotts_rule(samples: &[f64]) -> f64 {
         let n = samples.len() as f64;
         let std_dev = Self::sample_std_dev(samples);
@@ -83,6 +93,7 @@ impl KernelDensityEstimator {
     }
 
     /// Computes the sample standard deviation.
+    #[allow(clippy::cast_precision_loss)]
     fn sample_std_dev(samples: &[f64]) -> f64 {
         let n = samples.len() as f64;
         let mean = samples.iter().sum::<f64>() / n;
@@ -95,13 +106,14 @@ impl KernelDensityEstimator {
     /// The density is computed as the average of Gaussian kernels centered
     /// at each sample point:
     ///
-    /// f(x) = (1/n) * sum_i K((x - x_i) / h)
+    /// f(x) = (1/n) * `sum_i` K((x - `x_i`) / h)
     ///
     /// where K is the standard Gaussian kernel and h is the bandwidth.
-    pub fn pdf(&self, x: f64) -> f64 {
+    #[allow(clippy::cast_precision_loss)]
+    pub(crate) fn pdf(&self, x: f64) -> f64 {
         let n = self.samples.len() as f64;
         let inv_bandwidth = 1.0 / self.bandwidth;
-        let normalization = inv_bandwidth / (2.0 * std::f64::consts::PI).sqrt();
+        let normalization = inv_bandwidth / (2.0 * core::f64::consts::PI).sqrt();
 
         let density: f64 = self
             .samples
@@ -120,7 +132,7 @@ impl KernelDensityEstimator {
     /// Sampling works by:
     /// 1. Uniformly selecting one of the kernel centers (samples)
     /// 2. Adding Gaussian noise with the bandwidth as standard deviation
-    pub fn sample<R: Rng>(&self, rng: &mut R) -> f64 {
+    pub(crate) fn sample<R: Rng>(&self, rng: &mut R) -> f64 {
         // Select a random sample to center the kernel on
         let idx = rng.random_range(0..self.samples.len());
         let center = self.samples[idx];
@@ -130,7 +142,7 @@ impl KernelDensityEstimator {
         let u1: f64 = rng.random();
         let u2: f64 = rng.random();
 
-        let z = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos();
+        let z = (-2.0 * u1.ln()).sqrt() * (2.0 * core::f64::consts::PI * u2).cos();
         center + z * self.bandwidth
     }
 
@@ -148,7 +160,7 @@ mod tests {
     #[test]
     fn test_kde_pdf_basic() {
         let samples = vec![0.0, 1.0, 2.0];
-        let kde = KernelDensityEstimator::new(samples);
+        let kde = KernelDensityEstimator::new(samples).unwrap();
 
         // Density should be positive everywhere
         assert!(kde.pdf(0.0) > 0.0);
@@ -164,17 +176,17 @@ mod tests {
     #[test]
     fn test_kde_pdf_integrates_to_one() {
         let samples = vec![0.0, 1.0, 2.0, 3.0, 4.0];
-        let kde = KernelDensityEstimator::new(samples);
+        let kde = KernelDensityEstimator::new(samples).unwrap();
 
         // Numerical integration over a wide range
         let n_points = 10000;
         let low = -10.0;
         let high = 15.0;
-        let dx = (high - low) / n_points as f64;
+        let dx = (high - low) / f64::from(n_points);
 
         let integral: f64 = (0..n_points)
             .map(|i| {
-                let x = low + (i as f64 + 0.5) * dx;
+                let x = low + (f64::from(i) + 0.5) * dx;
                 kde.pdf(x) * dx
             })
             .sum();
@@ -189,16 +201,16 @@ mod tests {
     #[test]
     fn test_kde_with_bandwidth() {
         let samples = vec![0.0, 1.0, 2.0];
-        let kde = KernelDensityEstimator::with_bandwidth(samples, 0.5);
+        let kde = KernelDensityEstimator::with_bandwidth(samples, 0.5).unwrap();
 
-        assert_eq!(kde.bandwidth(), 0.5);
+        assert!((kde.bandwidth() - 0.5).abs() < f64::EPSILON);
         assert!(kde.pdf(1.0) > 0.0);
     }
 
     #[test]
     fn test_kde_sample_in_reasonable_range() {
         let samples = vec![0.0, 1.0, 2.0, 3.0, 4.0];
-        let kde = KernelDensityEstimator::new(samples);
+        let kde = KernelDensityEstimator::new(samples).unwrap();
         let mut rng = rand::rng();
 
         // Samples should generally be in a reasonable range around the data
@@ -213,7 +225,7 @@ mod tests {
     #[test]
     fn test_kde_single_sample() {
         let samples = vec![5.0];
-        let kde = KernelDensityEstimator::new(samples);
+        let kde = KernelDensityEstimator::new(samples).unwrap();
 
         // Should have positive density near the sample
         assert!(kde.pdf(5.0) > 0.0);
@@ -223,7 +235,7 @@ mod tests {
     #[test]
     fn test_kde_identical_samples() {
         let samples = vec![3.0, 3.0, 3.0, 3.0];
-        let kde = KernelDensityEstimator::new(samples);
+        let kde = KernelDensityEstimator::new(samples).unwrap();
 
         // Should handle degenerate case with identical samples
         assert!(kde.bandwidth() > 0.0);
@@ -233,7 +245,7 @@ mod tests {
     #[test]
     fn test_scotts_rule_bandwidth() {
         let samples = vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0];
-        let kde = KernelDensityEstimator::new(samples);
+        let kde = KernelDensityEstimator::new(samples).unwrap();
 
         // n = 10, n^(-1/5) ≈ 0.631
         // std_dev ≈ 2.87
@@ -246,23 +258,23 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "KDE requires at least one sample")]
     fn test_kde_empty_samples() {
         let samples: Vec<f64> = vec![];
-        KernelDensityEstimator::new(samples);
+        let result = KernelDensityEstimator::new(samples);
+        assert!(matches!(result, Err(TpeError::EmptySamples)));
     }
 
     #[test]
-    #[should_panic(expected = "Bandwidth must be positive")]
     fn test_kde_zero_bandwidth() {
         let samples = vec![1.0, 2.0, 3.0];
-        KernelDensityEstimator::with_bandwidth(samples, 0.0);
+        let result = KernelDensityEstimator::with_bandwidth(samples, 0.0);
+        assert!(matches!(result, Err(TpeError::InvalidBandwidth(_))));
     }
 
     #[test]
-    #[should_panic(expected = "Bandwidth must be positive")]
     fn test_kde_negative_bandwidth() {
         let samples = vec![1.0, 2.0, 3.0];
-        KernelDensityEstimator::with_bandwidth(samples, -1.0);
+        let result = KernelDensityEstimator::with_bandwidth(samples, -1.0);
+        assert!(matches!(result, Err(TpeError::InvalidBandwidth(_))));
     }
 }
