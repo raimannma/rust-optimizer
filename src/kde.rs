@@ -58,7 +58,7 @@ impl KernelDensityEstimator {
     /// # Panics
     ///
     /// Panics if `samples` is empty or `bandwidth` is not positive.
-    pub fn with_bandwidth(samples: Vec<f64>, bandwidth: f64) -> Self {
+    pub(crate) fn with_bandwidth(samples: Vec<f64>, bandwidth: f64) -> Self {
         assert!(!samples.is_empty(), "KDE requires at least one sample");
         assert!(bandwidth > 0.0, "Bandwidth must be positive");
 
@@ -135,7 +135,8 @@ impl KernelDensityEstimator {
     }
 
     /// Returns the bandwidth of this KDE.
-    pub fn bandwidth(&self) -> f64 {
+    #[cfg(test)]
+    pub(crate) fn bandwidth(&self) -> f64 {
         self.bandwidth
     }
 }
