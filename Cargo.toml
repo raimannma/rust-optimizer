@@ -1,0 +1,20 @@
+[package]
+name = "optimize"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+rand = "0.9"
+thiserror = "2"
+parking_lot = "0.12"
+ordered-float = "5"
+serde = { version = "1", features = ["derive"], optional = true }
+tokio = { version = "1", features = ["sync", "rt-multi-thread"], optional = true }
+
+[features]
+default = []
+serde = ["dep:serde", "ordered-float/serde"]
+async = ["dep:tokio"]
+
+[dev-dependencies]
+serde_json = "1"
