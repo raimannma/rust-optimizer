@@ -39,7 +39,7 @@ fn default_sampler() -> Arc<dyn Sampler> {
 /// # Examples
 ///
 /// ```
-/// use optimize::{Direction, Study};
+/// use optimizer::{Direction, Study};
 ///
 /// // Create a study to minimize an objective function
 /// let study: Study<f64> = Study::new(Direction::Minimize);
@@ -74,7 +74,7 @@ where
     /// # Examples
     ///
     /// ```
-    /// use optimize::{Direction, Study};
+    /// use optimizer::{Direction, Study};
     ///
     /// let study: Study<f64> = Study::new(Direction::Minimize);
     /// assert_eq!(study.direction(), Direction::Minimize);
@@ -93,7 +93,7 @@ where
     /// # Examples
     ///
     /// ```
-    /// use optimize::{Direction, RandomSampler, Study};
+    /// use optimizer::{Direction, RandomSampler, Study};
     ///
     /// let sampler = RandomSampler::with_seed(42);
     /// let study: Study<f64> = Study::with_sampler(Direction::Maximize, sampler);
@@ -125,7 +125,7 @@ where
     /// # Examples
     ///
     /// ```
-    /// use optimize::{Direction, Study, TpeSampler};
+    /// use optimizer::{Direction, Study, TpeSampler};
     ///
     /// // After deserializing a study, restore the TPE sampler
     /// let mut study: Study<f64> = Study::new(Direction::Minimize);
@@ -153,7 +153,7 @@ where
     /// # Examples
     ///
     /// ```
-    /// use optimize::{Direction, Study};
+    /// use optimizer::{Direction, Study};
     ///
     /// let study: Study<f64> = Study::new(Direction::Minimize);
     /// let trial = study.create_trial();
@@ -181,7 +181,7 @@ where
     /// # Examples
     ///
     /// ```
-    /// use optimize::{Direction, Study};
+    /// use optimizer::{Direction, Study};
     ///
     /// let study: Study<f64> = Study::new(Direction::Minimize);
     /// let mut trial = study.create_trial();
@@ -217,7 +217,7 @@ where
     /// # Examples
     ///
     /// ```
-    /// use optimize::{Direction, Study};
+    /// use optimizer::{Direction, Study};
     ///
     /// let study: Study<f64> = Study::new(Direction::Minimize);
     /// let trial = study.create_trial();
@@ -243,7 +243,7 @@ where
     /// # Examples
     ///
     /// ```
-    /// use optimize::{Direction, Study};
+    /// use optimizer::{Direction, Study};
     ///
     /// let study: Study<f64> = Study::new(Direction::Minimize);
     /// let mut trial = study.create_trial();
@@ -268,7 +268,7 @@ where
     /// # Examples
     ///
     /// ```
-    /// use optimize::{Direction, Study};
+    /// use optimizer::{Direction, Study};
     ///
     /// let study: Study<f64> = Study::new(Direction::Minimize);
     /// assert_eq!(study.n_trials(), 0);
@@ -295,7 +295,7 @@ where
     /// # Examples
     ///
     /// ```
-    /// use optimize::{Direction, Study};
+    /// use optimizer::{Direction, Study};
     ///
     /// let study: Study<f64> = Study::new(Direction::Minimize);
     ///
@@ -360,7 +360,7 @@ where
     /// # Examples
     ///
     /// ```
-    /// use optimize::{Direction, Study};
+    /// use optimizer::{Direction, Study};
     ///
     /// let study: Study<f64> = Study::new(Direction::Maximize);
     ///
@@ -409,7 +409,7 @@ where
     /// # Examples
     ///
     /// ```
-    /// use optimize::{Direction, RandomSampler, Study};
+    /// use optimizer::{Direction, RandomSampler, Study};
     ///
     /// // Minimize x^2
     /// let sampler = RandomSampler::with_seed(42);
@@ -418,7 +418,7 @@ where
     /// study
     ///     .optimize(10, |trial| {
     ///         let x = trial.suggest_float("x", -10.0, 10.0)?;
-    ///         Ok::<_, optimize::TpeError>(x * x)
+    ///         Ok::<_, optimizer::TpeError>(x * x)
     ///     })
     ///     .unwrap();
     ///
@@ -476,10 +476,10 @@ where
     /// # Examples
     ///
     /// ```
-    /// use optimize::{Direction, RandomSampler, Study};
+    /// use optimizer::{Direction, RandomSampler, Study};
     ///
     /// # #[cfg(feature = "async")]
-    /// # async fn example() -> optimize::Result<()> {
+    /// # async fn example() -> optimizer::Result<()> {
     /// // Minimize x^2 with async objective
     /// let sampler = RandomSampler::with_seed(42);
     /// let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
@@ -489,7 +489,7 @@ where
     ///         let x = trial.suggest_float("x", -10.0, 10.0)?;
     ///         // Simulate async work (e.g., network request)
     ///         let value = x * x;
-    ///         Ok::<_, optimize::TpeError>((trial, value))
+    ///         Ok::<_, optimizer::TpeError>((trial, value))
     ///     })
     ///     .await?;
     ///
@@ -556,10 +556,10 @@ where
     /// # Examples
     ///
     /// ```
-    /// use optimize::{Direction, RandomSampler, Study};
+    /// use optimizer::{Direction, RandomSampler, Study};
     ///
     /// # #[cfg(feature = "async")]
-    /// # async fn example() -> optimize::Result<()> {
+    /// # async fn example() -> optimizer::Result<()> {
     /// // Minimize x^2 with parallel async evaluation
     /// let sampler = RandomSampler::with_seed(42);
     /// let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
@@ -569,7 +569,7 @@ where
     ///         let x = trial.suggest_float("x", -10.0, 10.0)?;
     ///         // Async objective function (e.g., network request)
     ///         let value = x * x;
-    ///         Ok::<_, optimize::TpeError>((trial, value))
+    ///         Ok::<_, optimizer::TpeError>((trial, value))
     ///     })
     ///     .await?;
     ///
@@ -657,7 +657,7 @@ where
     /// ```
     /// use std::ops::ControlFlow;
     ///
-    /// use optimize::{Direction, RandomSampler, Study};
+    /// use optimizer::{Direction, RandomSampler, Study};
     ///
     /// // Stop early when we find a good enough value
     /// let sampler = RandomSampler::with_seed(42);
@@ -668,7 +668,7 @@ where
     ///         100,
     ///         |trial| {
     ///             let x = trial.suggest_float("x", -10.0, 10.0)?;
-    ///             Ok::<_, optimize::TpeError>(x * x)
+    ///             Ok::<_, optimizer::TpeError>(x * x)
     ///         },
     ///         |_study, completed_trial| {
     ///             // Stop early if we find a value less than 1.0
@@ -746,7 +746,7 @@ impl Study<f64> {
     /// # Examples
     ///
     /// ```
-    /// use optimize::{Direction, RandomSampler, Study};
+    /// use optimizer::{Direction, RandomSampler, Study};
     ///
     /// // With a seeded sampler for reproducibility
     /// let sampler = RandomSampler::with_seed(42);
@@ -767,7 +767,7 @@ impl Study<f64> {
 
     /// Runs optimization with full sampler integration.
     ///
-    /// This method is similar to the generic `optimize` method but creates trials
+    /// This method is similar to the generic `optimizer` method but creates trials
     /// using `create_trial_with_sampler()`, giving the sampler access to the history
     /// of completed trials for informed parameter suggestions.
     ///
@@ -787,7 +787,7 @@ impl Study<f64> {
     /// # Examples
     ///
     /// ```
-    /// use optimize::{Direction, RandomSampler, Study};
+    /// use optimizer::{Direction, RandomSampler, Study};
     ///
     /// // Minimize x^2 with sampler integration
     /// let sampler = RandomSampler::with_seed(42);
@@ -796,7 +796,7 @@ impl Study<f64> {
     /// study
     ///     .optimize_with_sampler(10, |trial| {
     ///         let x = trial.suggest_float("x", -10.0, 10.0)?;
-    ///         Ok::<_, optimize::TpeError>(x * x)
+    ///         Ok::<_, optimizer::TpeError>(x * x)
     ///     })
     ///     .unwrap();
     ///
@@ -856,7 +856,7 @@ impl Study<f64> {
     /// ```
     /// use std::ops::ControlFlow;
     ///
-    /// use optimize::{Direction, RandomSampler, Study};
+    /// use optimizer::{Direction, RandomSampler, Study};
     ///
     /// // Optimize with sampler integration and early stopping
     /// let sampler = RandomSampler::with_seed(42);
@@ -867,7 +867,7 @@ impl Study<f64> {
     ///         100,
     ///         |trial| {
     ///             let x = trial.suggest_float("x", -10.0, 10.0)?;
-    ///             Ok::<_, optimize::TpeError>(x * x)
+    ///             Ok::<_, optimizer::TpeError>(x * x)
     ///         },
     ///         |study, _completed_trial| {
     ///             // Stop after finding 5 good trials
@@ -950,10 +950,10 @@ impl Study<f64> {
     /// # Examples
     ///
     /// ```
-    /// use optimize::{Direction, RandomSampler, Study};
+    /// use optimizer::{Direction, RandomSampler, Study};
     ///
     /// # #[cfg(feature = "async")]
-    /// # async fn example() -> optimize::Result<()> {
+    /// # async fn example() -> optimizer::Result<()> {
     /// // Minimize x^2 with async objective and sampler integration
     /// let sampler = RandomSampler::with_seed(42);
     /// let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
@@ -963,7 +963,7 @@ impl Study<f64> {
     ///         let x = trial.suggest_float("x", -10.0, 10.0)?;
     ///         // Simulate async work (e.g., network request)
     ///         let value = x * x;
-    ///         Ok::<_, optimize::TpeError>((trial, value))
+    ///         Ok::<_, optimizer::TpeError>((trial, value))
     ///     })
     ///     .await?;
     ///
@@ -1030,10 +1030,10 @@ impl Study<f64> {
     /// # Examples
     ///
     /// ```
-    /// use optimize::{Direction, RandomSampler, Study};
+    /// use optimizer::{Direction, RandomSampler, Study};
     ///
     /// # #[cfg(feature = "async")]
-    /// # async fn example() -> optimize::Result<()> {
+    /// # async fn example() -> optimizer::Result<()> {
     /// // Minimize x^2 with parallel async evaluation and sampler integration
     /// let sampler = RandomSampler::with_seed(42);
     /// let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);

@@ -71,7 +71,7 @@ impl Trial {
     /// # Examples
     ///
     /// ```
-    /// use optimize::Trial;
+    /// use optimizer::Trial;
     ///
     /// let trial = Trial::new(0);
     /// assert_eq!(trial.id(), 0);
@@ -178,7 +178,7 @@ impl Trial {
     /// # Examples
     ///
     /// ```
-    /// use optimize::Trial;
+    /// use optimizer::Trial;
     ///
     /// let mut trial = Trial::new(0);
     /// let x = trial.suggest_float("x", 0.0, 1.0).unwrap();
@@ -261,7 +261,7 @@ impl Trial {
     /// # Examples
     ///
     /// ```
-    /// use optimize::Trial;
+    /// use optimizer::Trial;
     ///
     /// let mut trial = Trial::new(0);
     /// let lr = trial
@@ -358,7 +358,7 @@ impl Trial {
     /// # Examples
     ///
     /// ```
-    /// use optimize::Trial;
+    /// use optimizer::Trial;
     ///
     /// let mut trial = Trial::new(0);
     /// let x = trial.suggest_float_step("x", 0.0, 1.0, 0.25).unwrap();
@@ -450,7 +450,7 @@ impl Trial {
     /// # Examples
     ///
     /// ```
-    /// use optimize::Trial;
+    /// use optimizer::Trial;
     ///
     /// let mut trial = Trial::new(0);
     /// let n = trial.suggest_int("n_layers", 1, 10).unwrap();
@@ -536,7 +536,7 @@ impl Trial {
     /// # Examples
     ///
     /// ```
-    /// use optimize::Trial;
+    /// use optimizer::Trial;
     ///
     /// let mut trial = Trial::new(0);
     /// let batch_size = trial.suggest_int_log("batch_size", 1, 1024).unwrap();
@@ -627,7 +627,7 @@ impl Trial {
     /// # Examples
     ///
     /// ```
-    /// use optimize::Trial;
+    /// use optimizer::Trial;
     ///
     /// let mut trial = Trial::new(0);
     /// let n = trial
@@ -731,7 +731,7 @@ impl Trial {
     /// # Examples
     ///
     /// ```
-    /// use optimize::Trial;
+    /// use optimizer::Trial;
     ///
     /// let mut trial = Trial::new(0);
     /// let optimizer = trial

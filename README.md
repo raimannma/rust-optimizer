@@ -1,10 +1,10 @@
-# optimize
+# optimizer
 
 A Rust library for black-box optimization using Tree-Parzen Estimator (TPE).
 
-[![Docs](https://docs.rs/optimize/badge.svg)](https://docs.rs/optimize)
-[![Crates.io](https://img.shields.io/crates/v/optimize.svg)](https://crates.io/crates/optimize)
-[![codecov](https://codecov.io/gh/raimannma/rust-optimize/graph/badge.svg?token=WOE77XJ4M6)](https://codecov.io/gh/raimannma/rust-optimize)
+[![Docs](https://docs.rs/optimizer/badge.svg)](https://docs.rs/optimizer)
+[![Crates.io](https://img.shields.io/crates/v/optimizer.svg)](https://crates.io/crates/optimizer)
+[![codecov](https://codecov.io/gh/raimannma/rust-optimizer/graph/badge.svg?token=WOE77XJ4M6)](https://codecov.io/gh/raimannma/rust-optimizer)
 
 ## Features
 
@@ -17,7 +17,7 @@ A Rust library for black-box optimization using Tree-Parzen Estimator (TPE).
 ## Quick Start
 
 ```rust
-use optimize::{Direction, Study, TpeSampler};
+use optimizer::{Direction, Study, TpeSampler};
 
 let sampler = TpeSampler::builder().seed(42).build();
 let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
@@ -25,7 +25,7 @@ let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
 study
     .optimize_with_sampler(20, |trial| {
         let x = trial.suggest_float("x", -10.0, 10.0)?;
-        Ok::<_, optimize::TpeError>(x * x)
+        Ok::<_, optimizer::TpeError>(x * x)
     })
     .unwrap();
 
@@ -40,7 +40,7 @@ println!("Best value: {} at x={:?}", best.value, best.params);
 
 ## Documentation
 
-Full API documentation is available at [docs.rs/optimize](https://docs.rs/optimize).
+Full API documentation is available at [docs.rs/optimizer](https://docs.rs/optimizer).
 
 ## License
 

@@ -1,10 +1,10 @@
-//! Async integration tests for the optimize library.
+//! Async integration tests for the optimizer library.
 //!
 //! These tests are only compiled when the `async` feature is enabled.
 
 #![cfg(feature = "async")]
 
-use optimize::{Direction, RandomSampler, Study, TpeError, TpeSampler};
+use optimizer::{Direction, RandomSampler, Study, TpeError, TpeSampler};
 
 #[tokio::test]
 async fn test_optimize_async_basic() {

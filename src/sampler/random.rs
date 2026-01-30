@@ -17,7 +17,7 @@ use crate::sampler::{CompletedTrial, Sampler};
 /// # Examples
 ///
 /// ```
-/// use optimize::RandomSampler;
+/// use optimizer::RandomSampler;
 ///
 /// // Create with default RNG
 /// let sampler = RandomSampler::new();

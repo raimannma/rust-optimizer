@@ -59,7 +59,7 @@ impl<V> CompletedTrial<V> {
 /// Implementing a custom sampler:
 ///
 /// ```ignore
-/// use optimize::{Sampler, ParamValue, Distribution, CompletedTrial};
+/// use optimizer::{Sampler, ParamValue, Distribution, CompletedTrial};
 ///
 /// struct MySampler;
 ///

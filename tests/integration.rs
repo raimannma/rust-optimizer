@@ -1,6 +1,6 @@
-//! Integration tests for the optimize library.
+//! Integration tests for the optimizer library.
 
-use optimize::{Direction, RandomSampler, Study, TpeError, TpeSampler, Trial};
+use optimizer::{Direction, RandomSampler, Study, TpeError, TpeSampler, Trial};
 
 // =============================================================================
 // Test: optimize simple quadratic function with TPE, finds near-optimal
@@ -671,7 +671,7 @@ fn test_study_direction() {
 
 #[test]
 fn test_trial_state() {
-    use optimize::TrialState;
+    use optimizer::TrialState;
 
     let trial = Trial::new(0);
     assert_eq!(trial.state(), TrialState::Running);
@@ -863,7 +863,7 @@ fn test_trial_debug_format() {
 
 #[test]
 fn test_tpe_sampler_builder_default_trait() {
-    use optimize::TpeSamplerBuilder;
+    use optimizer::TpeSamplerBuilder;
 
     let builder = TpeSamplerBuilder::default();
     let sampler = builder.build();

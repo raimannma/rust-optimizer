@@ -1,4 +1,4 @@
-//! Core types for the optimize library.
+//! Core types for the optimizer library.
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};

@@ -12,7 +12,7 @@
 //! # Quick Start
 //!
 //! ```
-//! use optimize::{Direction, Study, TpeSampler};
+//! use optimizer::{Direction, Study, TpeSampler};
 //!
 //! // Create a study with TPE sampler
 //! let sampler = TpeSampler::builder().seed(42).build();
@@ -22,7 +22,7 @@
 //! study
 //!     .optimize_with_sampler(20, |trial| {
 //!         let x = trial.suggest_float("x", -10.0, 10.0)?;
-//!         Ok::<_, optimize::TpeError>(x * x)
+//!         Ok::<_, optimizer::TpeError>(x * x)
 //!     })
 //!     .unwrap();
 //!
@@ -36,7 +36,7 @@
 //! A [`Study`] manages optimization trials. Create one with an optimization direction:
 //!
 //! ```
-//! use optimize::{Direction, RandomSampler, Study, TpeSampler};
+//! use optimizer::{Direction, RandomSampler, Study, TpeSampler};
 //!
 //! // Minimize with default random sampler
 //! let study: Study<f64> = Study::new(Direction::Minimize);
@@ -53,7 +53,7 @@
 //! Within the objective function, use [`Trial`] to suggest parameter values:
 //!
 //! ```
-//! use optimize::{Direction, Study};
+//! use optimizer::{Direction, Study};
 //!
 //! let study: Study<f64> = Study::new(Direction::Minimize);
 //!
@@ -73,7 +73,7 @@
 //!         let optimizer = trial.suggest_categorical("optimizer", &["sgd", "adam", "rmsprop"])?;
 //!
 //!         // Return objective value
-//!         Ok::<_, optimize::TpeError>(x * n as f64)
+//!         Ok::<_, optimizer::TpeError>(x * n as f64)
 //!     })
 //!     .unwrap();
 //! ```
@@ -83,7 +83,7 @@
 //! The [`TpeSampler`] can be configured using the builder pattern:
 //!
 //! ```
-//! use optimize::TpeSampler;
+//! use optimizer::TpeSampler;
 //!
 //! let sampler = TpeSampler::builder()
 //!     .gamma(0.15)           // Quantile for good/bad split
@@ -98,7 +98,7 @@
 //! With the `async` feature enabled, you can run trials asynchronously:
 //!
 //! ```ignore
-//! use optimize::{Study, Direction};
+//! use optimizer::{Study, Direction};
 //!
 //! // Sequential async
 //! study.optimize_async(10, |mut trial| async move {
@@ -118,7 +118,7 @@
 //! With the `serde` feature enabled, studies can be serialized:
 //!
 //! ```ignore
-//! use optimize::{Study, Direction, TpeSampler};
+//! use optimizer::{Study, Direction, TpeSampler};
 //!
 //! // Save study state
 //! let study: Study<f64> = Study::new(Direction::Minimize);

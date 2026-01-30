@@ -1,4 +1,4 @@
-//! Error types for the optimize library.
+//! Error types for the optimizer library.
 
 use thiserror::Error;
 

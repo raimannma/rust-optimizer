@@ -27,7 +27,7 @@ use crate::sampler::{CompletedTrial, Sampler};
 /// # Examples
 ///
 /// ```
-/// use optimize::TpeSampler;
+/// use optimizer::TpeSampler;
 ///
 /// // Create with default settings
 /// let sampler = TpeSampler::new();
@@ -76,7 +76,7 @@ impl TpeSampler {
     /// # Examples
     ///
     /// ```
-    /// use optimize::TpeSampler;
+    /// use optimizer::TpeSampler;
     ///
     /// let sampler = TpeSampler::builder()
     ///     .gamma(0.15)
@@ -395,7 +395,7 @@ impl Default for TpeSampler {
 /// # Examples
 ///
 /// ```
-/// use optimize::TpeSamplerBuilder;
+/// use optimizer::TpeSamplerBuilder;
 ///
 /// let sampler = TpeSamplerBuilder::new()
 ///     .gamma(0.15)
@@ -448,7 +448,7 @@ impl TpeSamplerBuilder {
     /// # Examples
     ///
     /// ```
-    /// use optimize::TpeSamplerBuilder;
+    /// use optimizer::TpeSamplerBuilder;
     ///
     /// let sampler = TpeSamplerBuilder::new()
     ///     .gamma(0.10)  // Use top 10% as "good" trials
@@ -476,7 +476,7 @@ impl TpeSamplerBuilder {
     /// # Examples
     ///
     /// ```
-    /// use optimize::TpeSamplerBuilder;
+    /// use optimizer::TpeSamplerBuilder;
     ///
     /// let sampler = TpeSamplerBuilder::new()
     ///     .n_startup_trials(20)  // Random sample first 20 trials
@@ -500,7 +500,7 @@ impl TpeSamplerBuilder {
     /// # Examples
     ///
     /// ```
-    /// use optimize::TpeSamplerBuilder;
+    /// use optimizer::TpeSamplerBuilder;
     ///
     /// let sampler = TpeSamplerBuilder::new()
     ///     .n_ei_candidates(48)  // Evaluate more candidates
@@ -530,7 +530,7 @@ impl TpeSamplerBuilder {
     /// # Examples
     ///
     /// ```
-    /// use optimize::TpeSamplerBuilder;
+    /// use optimizer::TpeSamplerBuilder;
     ///
     /// let sampler = TpeSamplerBuilder::new()
     ///     .kde_bandwidth(0.5)  // Fixed bandwidth of 0.5
@@ -554,7 +554,7 @@ impl TpeSamplerBuilder {
     /// # Examples
     ///
     /// ```
-    /// use optimize::TpeSamplerBuilder;
+    /// use optimizer::TpeSamplerBuilder;
     ///
     /// let sampler = TpeSamplerBuilder::new()
     ///     .seed(42)  // Reproducible results
@@ -570,7 +570,7 @@ impl TpeSamplerBuilder {
     /// # Examples
     ///
     /// ```
-    /// use optimize::TpeSamplerBuilder;
+    /// use optimizer::TpeSamplerBuilder;
     ///
     /// let sampler = TpeSamplerBuilder::new()
     ///     .gamma(0.15)
