@@ -74,6 +74,21 @@ jobs:
         env:
           RUSTDOCFLAGS: -D warnings
 
+  feature-check:
+    name: Feature Combinations
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install Rust
+        run: |
+          rustup override set stable
+          rustup update stable
+      - name: Install cargo-hack
+        uses: taiki-e/install-action@cargo-hack
+      - uses: Swatinem/rust-cache@v2
+      - name: Check feature powerset
+        run: cargo hack check --feature-powerset --no-dev-deps
+
   coverage:
     name: Coverage
     runs-on: ubuntu-latest
