@@ -1186,3 +1186,223 @@ fn test_best_trial_with_nan_values() {
     let best = study.best_trial();
     assert!(best.is_ok());
 }
+
+// =============================================================================
+// Tests for suggest_bool
+// =============================================================================
+
+#[test]
+fn test_suggest_bool_caching() {
+    let mut trial = Trial::new(0);
+
+    let b1 = trial.suggest_bool("flag").unwrap();
+    let b2 = trial.suggest_bool("flag").unwrap();
+
+    assert_eq!(b1, b2, "repeated suggest_bool should return cached value");
+}
+
+#[test]
+fn test_suggest_bool_multiple_parameters() {
+    let mut trial = Trial::new(0);
+
+    let a = trial.suggest_bool("use_dropout").unwrap();
+    let b = trial.suggest_bool("use_batchnorm").unwrap();
+    let c = trial.suggest_bool("use_skip_connections").unwrap();
+
+    // All should be cached independently
+    assert_eq!(a, trial.suggest_bool("use_dropout").unwrap());
+    assert_eq!(b, trial.suggest_bool("use_batchnorm").unwrap());
+    assert_eq!(c, trial.suggest_bool("use_skip_connections").unwrap());
+}
+
+#[test]
+fn test_suggest_bool_in_optimization() {
+    let study: Study<f64> = Study::new(Direction::Minimize);
+
+    study
+        .optimize(10, |trial| {
+            let use_feature = trial.suggest_bool("use_feature")?;
+            let x = trial.suggest_float("x", 0.0, 10.0)?;
+
+            // Objective depends on boolean flag
+            let value = if use_feature { x } else { x * 2.0 };
+            Ok::<_, Error>(value)
+        })
+        .unwrap();
+
+    assert_eq!(study.n_trials(), 10);
+}
+
+#[test]
+fn test_suggest_bool_with_tpe() {
+    let sampler = TpeSampler::builder()
+        .seed(42)
+        .n_startup_trials(5)
+        .build()
+        .unwrap();
+
+    let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
+
+    study
+        .optimize_with_sampler(20, |trial| {
+            let use_large = trial.suggest_bool("use_large")?;
+            let base = if use_large { 10.0 } else { 1.0 };
+            let x = trial.suggest_float("x", 0.0, base)?;
+            Ok::<_, Error>(x)
+        })
+        .unwrap();
+
+    let best = study.best_trial().unwrap();
+    // Best should prefer use_large=false for smaller range
+    assert!(best.value < 5.0);
+}
+
+// =============================================================================
+// Tests for suggest_range
+// =============================================================================
+
+#[test]
+fn test_suggest_range_float_exclusive() {
+    let mut trial = Trial::new(0);
+
+    let x = trial.suggest_range("x", 0.0..1.0).unwrap();
+    assert!((0.0..=1.0).contains(&x), "value {x} out of range 0.0..1.0");
+}
+
+#[test]
+fn test_suggest_range_float_inclusive() {
+    let mut trial = Trial::new(0);
+
+    let x = trial.suggest_range("x", 0.0..=1.0).unwrap();
+    assert!((0.0..=1.0).contains(&x), "value {x} out of range 0.0..=1.0");
+}
+
+#[test]
+fn test_suggest_range_int_exclusive() {
+    let mut trial = Trial::new(0);
+
+    // 1..10 means 1 to 9 inclusive
+    let n = trial.suggest_range("n", 1_i64..10).unwrap();
+    assert!(
+        (1..=9).contains(&n),
+        "value {n} out of range 1..10 (should be 1-9)"
+    );
+}
+
+#[test]
+fn test_suggest_range_int_inclusive() {
+    let mut trial = Trial::new(0);
+
+    // 1..=10 means 1 to 10 inclusive
+    let n = trial.suggest_range("n", 1_i64..=10).unwrap();
+    assert!(
+        (1..=10).contains(&n),
+        "value {n} out of range 1..=10 (should be 1-10)"
+    );
+}
+
+#[test]
+fn test_suggest_range_caching_float() {
+    let mut trial = Trial::new(0);
+
+    let x1 = trial.suggest_range("x", 0.0..1.0).unwrap();
+    let x2 = trial.suggest_range("x", 0.0..1.0).unwrap();
+
+    assert_eq!(x1, x2, "repeated suggest_range should return cached value");
+}
+
+#[test]
+fn test_suggest_range_caching_int() {
+    let mut trial = Trial::new(0);
+
+    let n1 = trial.suggest_range("n", 1_i64..=100).unwrap();
+    let n2 = trial.suggest_range("n", 1_i64..=100).unwrap();
+
+    assert_eq!(n1, n2, "repeated suggest_range should return cached value");
+}
+
+#[test]
+fn test_suggest_range_multiple_parameters() {
+    let mut trial = Trial::new(0);
+
+    let x = trial.suggest_range("x", 0.0..1.0).unwrap();
+    let y = trial.suggest_range("y", -5.0..=5.0).unwrap();
+    let n = trial.suggest_range("n", 1_i64..10).unwrap();
+    let m = trial.suggest_range("m", 100_i64..=200).unwrap();
+
+    // All should be cached independently
+    assert_eq!(x, trial.suggest_range("x", 0.0..1.0).unwrap());
+    assert_eq!(y, trial.suggest_range("y", -5.0..=5.0).unwrap());
+    assert_eq!(n, trial.suggest_range("n", 1_i64..10).unwrap());
+    assert_eq!(m, trial.suggest_range("m", 100_i64..=200).unwrap());
+}
+
+#[test]
+fn test_suggest_range_in_optimization() {
+    let study: Study<f64> = Study::new(Direction::Minimize);
+
+    study
+        .optimize(10, |trial| {
+            let x = trial.suggest_range("x", -10.0..10.0)?;
+            let n = trial.suggest_range("n", 1_i64..=5)?;
+            Ok::<_, Error>(x * x + n as f64)
+        })
+        .unwrap();
+
+    assert_eq!(study.n_trials(), 10);
+}
+
+#[test]
+fn test_suggest_range_with_tpe() {
+    let sampler = TpeSampler::builder()
+        .seed(42)
+        .n_startup_trials(5)
+        .build()
+        .unwrap();
+
+    let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
+
+    study
+        .optimize_with_sampler(30, |trial| {
+            let x = trial.suggest_range("x", -5.0..=5.0)?;
+            let n = trial.suggest_range("n", 1_i64..=10)?;
+            Ok::<_, Error>(x * x + (n as f64 - 5.0).powi(2))
+        })
+        .unwrap();
+
+    let best = study.best_trial().unwrap();
+    // TPE should find near-optimal solution
+    assert!(best.value < 10.0, "TPE should find good solution");
+}
+
+#[test]
+fn test_suggest_range_empty_int_range_error() {
+    let mut trial = Trial::new(0);
+
+    // 5..5 is empty (no valid integers)
+    let result = trial.suggest_range("n", 5_i64..5);
+    assert!(
+        matches!(result, Err(Error::InvalidBounds { .. })),
+        "empty range should return InvalidBounds error"
+    );
+}
+
+#[test]
+fn test_suggest_range_single_value_int() {
+    let mut trial = Trial::new(0);
+
+    // 5..=5 has exactly one value: 5
+    let n = trial.suggest_range("n", 5_i64..=5).unwrap();
+    assert_eq!(n, 5, "single-value range should return that value");
+}
+
+#[test]
+fn test_suggest_range_single_value_float() {
+    let mut trial = Trial::new(0);
+
+    let x = trial.suggest_range("x", 4.2..=4.2).unwrap();
+    assert!(
+        (x - 4.2).abs() < f64::EPSILON,
+        "single-value range should return that value"
+    );
+}
