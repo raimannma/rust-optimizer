@@ -1,5 +1,6 @@
 //! Trial implementation for tracking sampled parameters and trial state.
 
+use core::ops::{Range, RangeInclusive};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -12,6 +13,64 @@ use crate::error::{Error, Result};
 use crate::param::ParamValue;
 use crate::sampler::{CompletedTrial, Sampler};
 use crate::types::TrialState;
+
+/// A trait for types that can be used with [`Trial::suggest_range`].
+///
+/// This trait is implemented for [`Range`] and [`RangeInclusive`] over `f64` and `i64`.
+/// It allows using Rust's range syntax directly with the optimizer.
+///
+/// # Supported Range Types
+///
+/// | Range Type | Example | Description |
+/// |------------|---------|-------------|
+/// | `Range<f64>` | `0.0..1.0` | Float range (end-exclusive, treated as inclusive for continuous sampling) |
+/// | `RangeInclusive<f64>` | `0.0..=1.0` | Float range (end-inclusive) |
+/// | `Range<i64>` | `1..10` | Integer range from 1 to 9 (end-exclusive) |
+/// | `RangeInclusive<i64>` | `1..=10` | Integer range from 1 to 10 (end-inclusive) |
+pub trait SuggestableRange {
+    /// The output type when suggesting from this range.
+    type Output;
+
+    /// Suggests a value from this range using the given trial.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the range is invalid (e.g., empty or low > high).
+    fn suggest(self, trial: &mut Trial, name: String) -> Result<Self::Output>;
+}
+
+impl SuggestableRange for Range<f64> {
+    type Output = f64;
+
+    fn suggest(self, trial: &mut Trial, name: String) -> Result<f64> {
+        trial.suggest_float(name, self.start, self.end)
+    }
+}
+
+impl SuggestableRange for RangeInclusive<f64> {
+    type Output = f64;
+
+    fn suggest(self, trial: &mut Trial, name: String) -> Result<f64> {
+        trial.suggest_float(name, *self.start(), *self.end())
+    }
+}
+
+impl SuggestableRange for Range<i64> {
+    type Output = i64;
+
+    fn suggest(self, trial: &mut Trial, name: String) -> Result<i64> {
+        // Range is exclusive on the end, so subtract 1
+        trial.suggest_int(name, self.start, self.end.saturating_sub(1))
+    }
+}
+
+impl SuggestableRange for RangeInclusive<i64> {
+    type Output = i64;
+
+    fn suggest(self, trial: &mut Trial, name: String) -> Result<i64> {
+        trial.suggest_int(name, *self.start(), *self.end())
+    }
+}
 
 /// A trial represents a single evaluation of the objective function.
 ///
@@ -826,5 +885,63 @@ impl Trial {
     /// ```
     pub fn suggest_bool(&mut self, name: impl Into<String>) -> Result<bool> {
         self.suggest_categorical(name, &[false, true])
+    }
+
+    /// Suggests a parameter value from a range.
+    ///
+    /// This method accepts both [`Range`] (`..`) and [`RangeInclusive`] (`..=`)
+    /// for both `f64` and `i64` types, allowing natural Rust range syntax.
+    ///
+    /// For integer ranges, note that `Range` (`..`) is end-exclusive while
+    /// `RangeInclusive` (`..=`) is end-inclusive, matching Rust's semantics.
+    ///
+    /// If the parameter has already been sampled with the same bounds, the cached value is returned.
+    /// If the parameter was sampled with different bounds, a `ParameterConflict` error is returned.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the parameter.
+    /// * `range` - The range to sample from.
+    ///
+    /// # Type Parameters
+    ///
+    /// * `R` - A range type implementing [`SuggestableRange`].
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidBounds` if the range is invalid (e.g., low > high or empty integer range).
+    /// Returns `ParameterConflict` if the parameter was previously sampled with different bounds.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use optimizer::Trial;
+    ///
+    /// let mut trial = Trial::new(0);
+    ///
+    /// // Float ranges
+    /// let x = trial.suggest_range("x", 0.0..1.0).unwrap();
+    /// assert!(x >= 0.0 && x <= 1.0);
+    ///
+    /// let y = trial.suggest_range("y", 0.0..=1.0).unwrap();
+    /// assert!(y >= 0.0 && y <= 1.0);
+    ///
+    /// // Integer ranges
+    /// let n = trial.suggest_range("n", 1_i64..10).unwrap(); // 1 to 9 inclusive
+    /// assert!(n >= 1 && n <= 9);
+    ///
+    /// let m = trial.suggest_range("m", 1_i64..=10).unwrap(); // 1 to 10 inclusive
+    /// assert!(m >= 1 && m <= 10);
+    ///
+    /// // Calling again with same range returns cached value
+    /// let x2 = trial.suggest_range("x", 0.0..1.0).unwrap();
+    /// assert_eq!(x, x2);
+    /// ```
+    pub fn suggest_range<R: SuggestableRange>(
+        &mut self,
+        name: impl Into<String>,
+        range: R,
+    ) -> Result<R::Output> {
+        range.suggest(self, name.into())
     }
 }

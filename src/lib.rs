@@ -177,5 +177,5 @@ mod types;
 pub use error::{Error, Result};
 pub use param::ParamValue;
 pub use study::Study;
-pub use trial::Trial;
+pub use trial::{SuggestableRange, Trial};
 pub use types::{Direction, TrialState};
