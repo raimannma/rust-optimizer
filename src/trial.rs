@@ -794,4 +794,37 @@ impl Trial {
 
         Ok(choices[index].clone())
     }
+
+    /// Suggests a boolean parameter.
+    ///
+    /// The value is selected uniformly at random from `{false, true}`.
+    /// This is equivalent to calling `suggest_categorical(name, &[false, true])`.
+    ///
+    /// If the parameter has already been sampled, the cached value is returned.
+    /// If the parameter was sampled with a different type, a `ParameterConflict` error is returned.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the parameter.
+    ///
+    /// # Errors
+    ///
+    /// Returns `ParameterConflict` if the parameter was previously sampled with a different type.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use optimizer::Trial;
+    ///
+    /// let mut trial = Trial::new(0);
+    /// let use_dropout = trial.suggest_bool("use_dropout").unwrap();
+    /// assert!(use_dropout == true || use_dropout == false);
+    ///
+    /// // Calling again returns cached value
+    /// let use_dropout2 = trial.suggest_bool("use_dropout").unwrap();
+    /// assert_eq!(use_dropout, use_dropout2);
+    /// ```
+    pub fn suggest_bool(&mut self, name: impl Into<String>) -> Result<bool> {
+        self.suggest_categorical(name, &[false, true])
+    }
 }
