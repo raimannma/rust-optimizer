@@ -60,7 +60,7 @@ impl SuggestableRange for Range<i64> {
 
     fn suggest(self, trial: &mut Trial, name: String) -> Result<i64> {
         // Range is exclusive on the end, so subtract 1
-        trial.suggest_int(name, self.start, self.end.saturating_sub(1))
+        trial.suggest_int(name, self.start, self.end.checked_sub(1).unwrap_or(self.end))
     }
 }
 
