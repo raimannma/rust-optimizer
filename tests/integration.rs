@@ -886,7 +886,7 @@ fn test_trial_debug_format() {
     let mut trial = Trial::new(42);
     trial.suggest_float("x", 0.0, 1.0).unwrap();
 
-    let debug_str = format!("{:?}", trial);
+    let debug_str = format!("{trial:?}");
 
     // Should contain trial id and other fields
     assert!(debug_str.contains("Trial"));
