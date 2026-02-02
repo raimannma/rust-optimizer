@@ -1,10 +1,15 @@
 //! Sampler trait and implementations for parameter sampling.
 
 pub mod grid;
+pub mod multivariate_tpe;
 pub mod random;
 pub mod tpe;
 
 use std::collections::HashMap;
+
+pub use multivariate_tpe::{
+    ConstantLiarStrategy, MultivariateTpeSampler, MultivariateTpeSamplerBuilder,
+};
 
 use crate::distribution::Distribution;
 use crate::param::ParamValue;
@@ -39,6 +44,57 @@ impl<V> CompletedTrial<V> {
             params,
             distributions,
             value,
+        }
+    }
+}
+
+/// A pending (running) trial with its parameters and distributions, but no objective value yet.
+///
+/// This struct represents a trial that has been started and has sampled parameters,
+/// but is still running and hasn't returned an objective value. It is used with the
+/// constant liar strategy for parallel optimization.
+///
+/// # Examples
+///
+/// ```ignore
+/// use std::collections::HashMap;
+/// use optimizer::sampler::PendingTrial;
+/// use optimizer::param::ParamValue;
+/// use optimizer::distribution::{Distribution, FloatDistribution};
+///
+/// let mut params = HashMap::new();
+/// params.insert("x".to_string(), ParamValue::Float(0.5));
+///
+/// let mut distributions = HashMap::new();
+/// distributions.insert("x".to_string(), Distribution::Float(FloatDistribution {
+///     low: 0.0, high: 1.0, log_scale: false, step: None,
+/// }));
+///
+/// let pending = PendingTrial::new(1, params, distributions);
+/// assert_eq!(pending.id, 1);
+/// ```
+#[derive(Clone, Debug)]
+pub struct PendingTrial {
+    /// The unique identifier for this trial.
+    pub id: u64,
+    /// The sampled parameter values, keyed by parameter name.
+    pub params: HashMap<String, ParamValue>,
+    /// The parameter distributions used, keyed by parameter name.
+    pub distributions: HashMap<String, Distribution>,
+}
+
+impl PendingTrial {
+    /// Creates a new pending trial.
+    #[must_use]
+    pub fn new(
+        id: u64,
+        params: HashMap<String, ParamValue>,
+        distributions: HashMap<String, Distribution>,
+    ) -> Self {
+        Self {
+            id,
+            params,
+            distributions,
         }
     }
 }

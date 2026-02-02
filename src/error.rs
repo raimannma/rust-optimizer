@@ -46,6 +46,32 @@ pub enum Error {
     #[error("KDE requires at least one sample")]
     EmptySamples,
 
+    /// Returned when multivariate KDE samples have zero dimensions.
+    #[error("multivariate KDE samples must have at least one dimension")]
+    ZeroDimensions,
+
+    /// Returned when multivariate KDE samples have inconsistent dimensions.
+    #[error(
+        "dimension mismatch: expected {expected} dimensions but sample {sample_index} has {got}"
+    )]
+    DimensionMismatch {
+        /// The expected number of dimensions.
+        expected: usize,
+        /// The actual number of dimensions in the sample.
+        got: usize,
+        /// The index of the sample with mismatched dimensions.
+        sample_index: usize,
+    },
+
+    /// Returned when bandwidth vector length doesn't match the number of dimensions.
+    #[error("bandwidth dimension mismatch: expected {expected} bandwidths but got {got}")]
+    BandwidthDimensionMismatch {
+        /// The expected number of bandwidths.
+        expected: usize,
+        /// The actual number of bandwidths provided.
+        got: usize,
+    },
+
     /// Returned when an internal invariant is violated.
     #[error("internal error: {0}")]
     Internal(&'static str),

@@ -13,6 +13,7 @@ categories = ["algorithm", "science", "data-structures"]
 readme = "README.md"
 
 [dependencies]
+log = "0.4"
 rand = "0.9"
 thiserror = "2"
 parking_lot = "0.12"
