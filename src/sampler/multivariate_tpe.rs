@@ -23,7 +23,6 @@
 //! - `n_startup_trials`: Number of random trials before multivariate TPE kicks in
 //! - `n_ei_candidates`: Number of candidates to evaluate when selecting the next point
 //! - `group`: When true, decomposes search space into independent groups
-//! - `warn_independent_sampling`: When true, logs warnings when falling back to independent sampling
 //! - `constant_liar`: Strategy for imputing values to pending trials in parallel optimization
 //!
 //! # Fallback Behavior for Dynamic Search Spaces
@@ -39,10 +38,6 @@
 //!
 //! 3. **Uniform random sampling** for new parameters that have never been seen, or during
 //!    the startup phase before enough trials are collected.
-//!
-//! When `warn_independent_sampling` is enabled (default), the sampler logs warnings via the
-//! `log` crate when fallback occurs, helping you understand why multivariate modeling wasn't
-//! possible.
 //!
 //! # Group Decomposition
 //!
@@ -115,17 +110,12 @@
 //! ```
 //! use optimizer::sampler::MultivariateTpeSampler;
 //!
-//! // Disable fallback warnings for dynamic search spaces
-//! let sampler = MultivariateTpeSampler::builder()
-//!     .warn_independent_sampling(false)
-//!     .build()
-//!     .unwrap();
+//! let sampler = MultivariateTpeSampler::builder().build().unwrap();
 //! ```
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use log::warn;
 use parking_lot::Mutex;
 use rand::SeedableRng;
 use rand::rngs::StdRng;
@@ -187,7 +177,6 @@ pub enum ConstantLiarStrategy {
 /// - `n_startup_trials`: Number of random trials before TPE sampling begins
 /// - `n_ei_candidates`: Number of candidates to evaluate per joint sample
 /// - `group`: Whether to decompose search space into independent groups
-/// - `warn_independent_sampling`: Whether to log warnings when falling back to independent sampling
 pub struct MultivariateTpeSampler {
     /// Strategy for computing the gamma quantile.
     gamma_strategy: Arc<dyn GammaStrategy>,
@@ -197,8 +186,6 @@ pub struct MultivariateTpeSampler {
     n_ei_candidates: usize,
     /// Whether to decompose search space into independent groups based on parameter co-occurrence.
     group: bool,
-    /// Whether to log warnings when falling back to independent sampling.
-    warn_independent_sampling: bool,
     /// Strategy for imputing objective values for pending trials in parallel optimization.
     constant_liar: ConstantLiarStrategy,
     /// Thread-safe RNG for sampling.
@@ -216,7 +203,6 @@ impl MultivariateTpeSampler {
     /// - `n_startup_trials`: 10 (random sampling for first 10 trials)
     /// - `n_ei_candidates`: 24 (evaluate 24 candidates per sample)
     /// - `group`: false (no group decomposition)
-    /// - `warn_independent_sampling`: true (log warnings on fallback)
     ///
     /// # Examples
     ///
@@ -232,7 +218,6 @@ impl MultivariateTpeSampler {
             n_startup_trials: 10,
             n_ei_candidates: 24,
             group: false,
-            warn_independent_sampling: true,
             constant_liar: ConstantLiarStrategy::None,
             rng: Mutex::new(StdRng::from_os_rng()),
             joint_sample_cache: Mutex::new(None),
@@ -281,12 +266,6 @@ impl MultivariateTpeSampler {
     #[must_use]
     pub fn group(&self) -> bool {
         self.group
-    }
-
-    /// Returns whether independent sampling warnings are enabled.
-    #[must_use]
-    pub fn warn_independent_sampling(&self) -> bool {
-        self.warn_independent_sampling
     }
 
     /// Returns the constant liar strategy for parallel optimization.
@@ -1003,14 +982,6 @@ impl MultivariateTpeSampler {
             .collect();
 
         if !ungrouped_params.is_empty() {
-            if self.warn_independent_sampling {
-                let param_names: Vec<&str> = ungrouped_params.keys().map(String::as_str).collect();
-                warn!(
-                    "MultivariateTpeSampler: Parameters {param_names:?} are not in any group. \
-                     Sampling independently."
-                );
-            }
-
             // Sample ungrouped parameters uniformly (no history for them)
             let mut rng = self.rng.lock();
             for (name, dist) in &ungrouped_params {
@@ -1053,39 +1024,15 @@ impl MultivariateTpeSampler {
 
         let intersection = IntersectionSearchSpace::calculate(history);
         if intersection.is_empty() {
-            if self.warn_independent_sampling {
-                warn!(
-                    "MultivariateTpeSampler: No common parameters found across trials. \
-                     Falling back to fully independent sampling."
-                );
-            }
             return self.sample_all_independent_with_rng(search_space, history, rng);
         }
 
         let filtered = self.filter_trials(history, &intersection);
         if filtered.len() < 2 {
-            // Not enough trials in intersection - use independent TPE on full history
-            if self.warn_independent_sampling {
-                warn!(
-                    "MultivariateTpeSampler: Only {} trial(s) with all intersection parameters. \
-                     Falling back to independent sampling.",
-                    filtered.len()
-                );
-            }
             return self.sample_all_independent_with_rng(search_space, history, rng);
         }
 
         let (good, bad) = self.split_trials(&filtered);
-        if good.is_empty() || bad.is_empty() {
-            // Can't split trials properly - use independent TPE on full history
-            if self.warn_independent_sampling {
-                warn!(
-                    "MultivariateTpeSampler: Unable to split trials into good/bad groups. \
-                     Falling back to independent sampling."
-                );
-            }
-            return self.sample_all_independent_with_rng(search_space, history, rng);
-        }
 
         // Sample categorical parameters using TPE with l(x)/g(x) ratio
         let mut result: HashMap<String, ParamValue> = HashMap::new();
@@ -1232,7 +1179,7 @@ impl MultivariateTpeSampler {
     fn fill_remaining_independent(
         &self,
         search_space: &HashMap<String, Distribution>,
-        intersection: &HashMap<String, Distribution>,
+        _intersection: &HashMap<String, Distribution>,
         history: &[CompletedTrial],
         result: &mut HashMap<String, ParamValue>,
     ) {
@@ -1244,15 +1191,6 @@ impl MultivariateTpeSampler {
 
         if missing_params.is_empty() {
             return;
-        }
-
-        // Log warning if we have missing params and warnings are enabled
-        if self.warn_independent_sampling && !intersection.is_empty() {
-            let param_names: Vec<&str> = missing_params.iter().map(|(n, _)| n.as_str()).collect();
-            warn!(
-                "MultivariateTpeSampler: Parameters {param_names:?} are not in the intersection \
-                 search space. Sampling independently."
-            );
         }
 
         // Split trials for independent sampling
@@ -1273,7 +1211,7 @@ impl MultivariateTpeSampler {
     fn fill_remaining_independent_with_rng(
         &self,
         search_space: &HashMap<String, Distribution>,
-        intersection: &HashMap<String, Distribution>,
+        _intersection: &HashMap<String, Distribution>,
         history: &[CompletedTrial],
         result: &mut HashMap<String, ParamValue>,
         rng: &mut StdRng,
@@ -1286,15 +1224,6 @@ impl MultivariateTpeSampler {
 
         if missing_params.is_empty() {
             return;
-        }
-
-        // Log warning if we have missing params and warnings are enabled
-        if self.warn_independent_sampling && !intersection.is_empty() {
-            let param_names: Vec<&str> = missing_params.iter().map(|(n, _)| n.as_str()).collect();
-            warn!(
-                "MultivariateTpeSampler: Parameters {param_names:?} are not in the intersection \
-                 search space. Sampling independently."
-            );
         }
 
         // Split trials for independent sampling
@@ -1874,7 +1803,6 @@ pub struct MultivariateTpeSamplerBuilder {
     n_startup_trials: usize,
     n_ei_candidates: usize,
     group: bool,
-    warn_independent_sampling: bool,
     constant_liar: ConstantLiarStrategy,
     seed: Option<u64>,
 }
@@ -1887,7 +1815,6 @@ impl MultivariateTpeSamplerBuilder {
     /// - `n_startup_trials`: 10 (random sampling for first 10 trials)
     /// - `n_ei_candidates`: 24 (evaluate 24 candidates per sample)
     /// - `group`: false (no group decomposition)
-    /// - `warn_independent_sampling`: true (log warnings on fallback)
     /// - `constant_liar`: None (no imputation for pending trials)
     /// - seed: None (use OS-provided entropy)
     #[must_use]
@@ -1898,7 +1825,6 @@ impl MultivariateTpeSamplerBuilder {
             n_startup_trials: 10,
             n_ei_candidates: 24,
             group: false,
-            warn_independent_sampling: true,
             constant_liar: ConstantLiarStrategy::None,
             seed: None,
         }
@@ -2051,33 +1977,6 @@ impl MultivariateTpeSamplerBuilder {
         self
     }
 
-    /// Enables or disables warnings when falling back to independent sampling.
-    ///
-    /// When multivariate TPE cannot model all parameters jointly (e.g., due to
-    /// dynamic search spaces), it falls back to independent sampling for some
-    /// parameters. This setting controls whether a warning is logged when this
-    /// occurs.
-    ///
-    /// # Arguments
-    ///
-    /// * `warn` - Whether to log warnings on fallback.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use optimizer::sampler::MultivariateTpeSamplerBuilder;
-    ///
-    /// let sampler = MultivariateTpeSamplerBuilder::new()
-    ///     .warn_independent_sampling(false)  // Suppress fallback warnings
-    ///     .build()
-    ///     .unwrap();
-    /// ```
-    #[must_use]
-    pub fn warn_independent_sampling(mut self, warn: bool) -> Self {
-        self.warn_independent_sampling = warn;
-        self
-    }
-
     /// Sets the constant liar strategy for parallel optimization.
     ///
     /// The constant liar strategy determines how to impute objective values for
@@ -2177,7 +2076,6 @@ impl MultivariateTpeSamplerBuilder {
             n_startup_trials: self.n_startup_trials,
             n_ei_candidates: self.n_ei_candidates,
             group: self.group,
-            warn_independent_sampling: self.warn_independent_sampling,
             constant_liar: self.constant_liar,
             rng: Mutex::new(rng),
             joint_sample_cache: Mutex::new(None),
@@ -2209,7 +2107,6 @@ mod tests {
         assert_eq!(sampler.n_startup_trials(), 10);
         assert_eq!(sampler.n_ei_candidates(), 24);
         assert!(!sampler.group());
-        assert!(sampler.warn_independent_sampling());
     }
 
     #[test]
@@ -2224,7 +2121,6 @@ mod tests {
         assert_eq!(sampler.n_startup_trials(), 10);
         assert_eq!(sampler.n_ei_candidates(), 24);
         assert!(!sampler.group());
-        assert!(sampler.warn_independent_sampling());
     }
 
     // ========================================================================
@@ -2243,7 +2139,6 @@ mod tests {
         assert_eq!(sampler.n_startup_trials(), 10);
         assert_eq!(sampler.n_ei_candidates(), 24);
         assert!(!sampler.group());
-        assert!(sampler.warn_independent_sampling());
     }
 
     #[test]
@@ -2369,16 +2264,6 @@ mod tests {
     }
 
     #[test]
-    fn test_builder_warn_independent_sampling() {
-        let sampler = MultivariateTpeSamplerBuilder::new()
-            .warn_independent_sampling(false)
-            .build()
-            .unwrap();
-
-        assert!(!sampler.warn_independent_sampling());
-    }
-
-    #[test]
     fn test_builder_seed() {
         // Two samplers with the same seed should produce the same sequence
         // We can't directly test RNG output, but we verify build succeeds
@@ -2403,7 +2288,6 @@ mod tests {
             .n_startup_trials(15)
             .n_ei_candidates(32)
             .group(true)
-            .warn_independent_sampling(false)
             .seed(12345)
             .build()
             .unwrap();
@@ -2412,7 +2296,6 @@ mod tests {
         assert_eq!(sampler.n_startup_trials(), 15);
         assert_eq!(sampler.n_ei_candidates(), 32);
         assert!(sampler.group());
-        assert!(!sampler.warn_independent_sampling());
     }
 
     #[test]
@@ -5632,7 +5515,6 @@ mod tests {
             let sampler = MultivariateTpeSampler::builder()
                 .n_startup_trials(1)
                 .seed(42)
-                .warn_independent_sampling(false)
                 .build()
                 .unwrap();
 
@@ -5695,7 +5577,6 @@ mod tests {
             let sampler = MultivariateTpeSampler::builder()
                 .n_startup_trials(1)
                 .seed(42)
-                .warn_independent_sampling(false)
                 .build()
                 .unwrap();
 
@@ -5737,7 +5618,6 @@ mod tests {
             let sampler = MultivariateTpeSampler::builder()
                 .n_startup_trials(5)
                 .seed(42)
-                .warn_independent_sampling(false)
                 .build()
                 .unwrap();
 
@@ -5782,7 +5662,6 @@ mod tests {
             let sampler = MultivariateTpeSampler::builder()
                 .n_startup_trials(5)
                 .seed(42)
-                .warn_independent_sampling(false)
                 .build()
                 .unwrap();
 
@@ -5829,7 +5708,6 @@ mod tests {
                 .n_startup_trials(5)
                 .n_ei_candidates(48)
                 .seed(123)
-                .warn_independent_sampling(false)
                 .build()
                 .unwrap();
 
@@ -5885,7 +5763,6 @@ mod tests {
             let sampler = MultivariateTpeSampler::builder()
                 .n_startup_trials(1)
                 .seed(42)
-                .warn_independent_sampling(false)
                 .build()
                 .unwrap();
 
@@ -5894,22 +5771,6 @@ mod tests {
 
             assert!(result.contains_key("x"));
             assert!(result.contains_key("y"));
-        }
-
-        #[test]
-        fn test_warn_independent_sampling_flag() {
-            // This test verifies the flag exists and can be set
-            let sampler_with_warn = MultivariateTpeSampler::builder()
-                .warn_independent_sampling(true)
-                .build()
-                .unwrap();
-            assert!(sampler_with_warn.warn_independent_sampling());
-
-            let sampler_without_warn = MultivariateTpeSampler::builder()
-                .warn_independent_sampling(false)
-                .build()
-                .unwrap();
-            assert!(!sampler_without_warn.warn_independent_sampling());
         }
 
         #[test]
@@ -5965,7 +5826,6 @@ mod tests {
             let sampler = MultivariateTpeSampler::builder()
                 .n_startup_trials(5)
                 .seed(42)
-                .warn_independent_sampling(false)
                 .build()
                 .unwrap();
 
@@ -6196,7 +6056,6 @@ mod tests {
             let sampler = MultivariateTpeSamplerBuilder::new()
                 .group(true)
                 .n_startup_trials(3)
-                .warn_independent_sampling(false)
                 .seed(42)
                 .build()
                 .unwrap();
@@ -6384,7 +6243,6 @@ mod tests {
             let sampler = MultivariateTpeSamplerBuilder::new()
                 .group(false)
                 .n_startup_trials(3)
-                .warn_independent_sampling(false)
                 .seed(42)
                 .build()
                 .unwrap();
@@ -6483,7 +6341,6 @@ mod tests {
             let sampler = MultivariateTpeSamplerBuilder::new()
                 .group(true)
                 .n_startup_trials(3)
-                .warn_independent_sampling(false)
                 .seed(42)
                 .build()
                 .unwrap();

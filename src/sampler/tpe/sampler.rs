@@ -91,12 +91,7 @@ use crate::sampler::{CompletedTrial, Sampler};
 /// # Gamma Strategies
 ///
 /// The gamma quantile can be configured using different strategies via the
-/// [`GammaStrategy`] trait. Built-in strategies include:
-///
-/// - [`FixedGamma`]: Constant gamma (default: 0.25)
-/// - [`LinearGamma`]: Linear interpolation based on trial count
-/// - [`SqrtGamma`]: Inverse square root scaling (Optuna-style)
-/// - [`HyperoptGamma`]: Hyperopt-style adaptive gamma
+/// [`GammaStrategy`] trait.
 ///
 /// # Examples
 ///
