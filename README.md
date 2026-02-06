@@ -145,6 +145,7 @@ let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
 ## Feature Flags
 
 - `async` - Enable async optimization methods (requires tokio)
+- `derive` - Enable `#[derive(Categorical)]` for enum parameters
 
 ## Documentation
 
