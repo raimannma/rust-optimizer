@@ -8,6 +8,7 @@ use std::collections::HashMap;
 
 use crate::distribution::Distribution;
 use crate::param::ParamValue;
+use crate::parameter::ParamId;
 
 /// A completed trial with its parameters, distributions, and objective value.
 ///
@@ -18,10 +19,12 @@ use crate::param::ParamValue;
 pub struct CompletedTrial<V = f64> {
     /// The unique identifier for this trial.
     pub id: u64,
-    /// The sampled parameter values, keyed by parameter name.
-    pub params: HashMap<String, ParamValue>,
-    /// The parameter distributions used, keyed by parameter name.
-    pub distributions: HashMap<String, Distribution>,
+    /// The sampled parameter values, keyed by parameter id.
+    pub params: HashMap<ParamId, ParamValue>,
+    /// The parameter distributions used, keyed by parameter id.
+    pub distributions: HashMap<ParamId, Distribution>,
+    /// Human-readable labels for parameters, keyed by parameter id.
+    pub param_labels: HashMap<ParamId, String>,
     /// The objective value returned by the objective function.
     pub value: V,
 }
@@ -30,14 +33,16 @@ impl<V> CompletedTrial<V> {
     /// Creates a new completed trial.
     pub fn new(
         id: u64,
-        params: HashMap<String, ParamValue>,
-        distributions: HashMap<String, Distribution>,
+        params: HashMap<ParamId, ParamValue>,
+        distributions: HashMap<ParamId, Distribution>,
+        param_labels: HashMap<ParamId, String>,
         value: V,
     ) -> Self {
         Self {
             id,
             params,
             distributions,
+            param_labels,
             value,
         }
     }
@@ -48,34 +53,16 @@ impl<V> CompletedTrial<V> {
 /// This struct represents a trial that has been started and has sampled parameters,
 /// but is still running and hasn't returned an objective value. It is used with the
 /// constant liar strategy for parallel optimization.
-///
-/// # Examples
-///
-/// ```ignore
-/// use std::collections::HashMap;
-/// use optimizer::sampler::PendingTrial;
-/// use optimizer::param::ParamValue;
-/// use optimizer::distribution::{Distribution, FloatDistribution};
-///
-/// let mut params = HashMap::new();
-/// params.insert("x".to_string(), ParamValue::Float(0.5));
-///
-/// let mut distributions = HashMap::new();
-/// distributions.insert("x".to_string(), Distribution::Float(FloatDistribution {
-///     low: 0.0, high: 1.0, log_scale: false, step: None,
-/// }));
-///
-/// let pending = PendingTrial::new(1, params, distributions);
-/// assert_eq!(pending.id, 1);
-/// ```
 #[derive(Clone, Debug)]
 pub struct PendingTrial {
     /// The unique identifier for this trial.
     pub id: u64,
-    /// The sampled parameter values, keyed by parameter name.
-    pub params: HashMap<String, ParamValue>,
-    /// The parameter distributions used, keyed by parameter name.
-    pub distributions: HashMap<String, Distribution>,
+    /// The sampled parameter values, keyed by parameter id.
+    pub params: HashMap<ParamId, ParamValue>,
+    /// The parameter distributions used, keyed by parameter id.
+    pub distributions: HashMap<ParamId, Distribution>,
+    /// Human-readable labels for parameters, keyed by parameter id.
+    pub param_labels: HashMap<ParamId, String>,
 }
 
 impl PendingTrial {
@@ -83,13 +70,15 @@ impl PendingTrial {
     #[must_use]
     pub fn new(
         id: u64,
-        params: HashMap<String, ParamValue>,
-        distributions: HashMap<String, Distribution>,
+        params: HashMap<ParamId, ParamValue>,
+        distributions: HashMap<ParamId, Distribution>,
+        param_labels: HashMap<ParamId, String>,
     ) -> Self {
         Self {
             id,
             params,
             distributions,
+            param_labels,
         }
     }
 }
@@ -99,28 +88,6 @@ impl PendingTrial {
 /// Samplers are responsible for generating parameter values based on
 /// the distribution and historical trial data. The trait requires
 /// `Send + Sync` to support concurrent and async optimization.
-///
-/// # Examples
-///
-/// Implementing a custom sampler:
-///
-/// ```ignore
-/// use optimizer::{Sampler, ParamValue, Distribution, CompletedTrial};
-///
-/// struct MySampler;
-///
-/// impl Sampler for MySampler {
-///     fn sample(
-///         &self,
-///         distribution: &Distribution,
-///         trial_id: u64,
-///         history: &[CompletedTrial],
-///     ) -> ParamValue {
-///         // Custom sampling logic here
-///         todo!()
-///     }
-/// }
-/// ```
 pub trait Sampler: Send + Sync {
     /// Samples a parameter value from the given distribution.
     ///

@@ -26,6 +26,7 @@
 
 use std::time::{Duration, Instant};
 
+use optimizer::parameter::{BoolParam, CategoricalParam, IntParam, Parameter};
 use optimizer::sampler::tpe::TpeSampler;
 use optimizer::{Direction, ParamValue, Study, Trial};
 
@@ -133,32 +134,27 @@ async fn evaluate_service(config: &ServiceConfig) -> f64 {
 /// 3. Return both the Trial and the result value as a tuple
 ///
 /// This ownership pattern allows the trial to be used across await points.
-async fn objective(mut trial: Trial) -> optimizer::Result<(Trial, f64)> {
-    // Sample configuration parameters
-
-    // Stepped integers: only sample multiples of the step value
-    let cache_size_mb = trial.suggest_int_step("cache_size_mb", 64, 1024, 64)?;
-    let connection_pool_size = trial.suggest_int_step("connection_pool_size", 10, 200, 10)?;
-    let request_timeout_ms = trial.suggest_int_step("request_timeout_ms", 1000, 10000, 500)?;
-
-    // Regular integer
-    let retry_count = trial.suggest_int("retry_count", 0, 5)?;
-
-    // Log-scale integer: good for parameters like batch sizes
-    // that might vary from 1 to 256
-    let batch_size = trial.suggest_int_log("batch_size", 1, 256)?;
-
-    // Regular integer for compression level
-    let compression_level = trial.suggest_int("compression_level", 0, 9)?;
-
-    // Boolean: internally uses categorical with [false, true]
-    let use_http2 = trial.suggest_bool("use_http2")?;
-
-    // Categorical: choose from a list of options
-    let load_balancing = trial.suggest_categorical(
-        "load_balancing",
-        &["round_robin", "least_connections", "random", "ip_hash"],
-    )?;
+#[allow(clippy::too_many_arguments)]
+async fn objective(
+    mut trial: Trial,
+    cache_size_mb_param: &IntParam,
+    connection_pool_size_param: &IntParam,
+    request_timeout_ms_param: &IntParam,
+    retry_count_param: &IntParam,
+    batch_size_param: &IntParam,
+    compression_level_param: &IntParam,
+    use_http2_param: &BoolParam,
+    load_balancing_param: &CategoricalParam<&str>,
+) -> optimizer::Result<(Trial, f64)> {
+    // Sample configuration parameters using parameter definitions
+    let cache_size_mb = cache_size_mb_param.suggest(&mut trial)?;
+    let connection_pool_size = connection_pool_size_param.suggest(&mut trial)?;
+    let request_timeout_ms = request_timeout_ms_param.suggest(&mut trial)?;
+    let retry_count = retry_count_param.suggest(&mut trial)?;
+    let batch_size = batch_size_param.suggest(&mut trial)?;
+    let compression_level = compression_level_param.suggest(&mut trial)?;
+    let use_http2 = use_http2_param.suggest(&mut trial)?;
+    let load_balancing = load_balancing_param.suggest(&mut trial)?;
 
     // Build configuration
     let config = ServiceConfig {
@@ -184,20 +180,11 @@ async fn objective(mut trial: Trial) -> optimizer::Result<(Trial, f64)> {
 // ============================================================================
 
 /// Formats a parameter value for display.
-fn format_param(name: &str, value: &ParamValue) -> String {
-    match (name, value) {
-        (_, ParamValue::Float(v)) => format!("{v:.4}"),
-        (_, ParamValue::Int(v)) => format!("{v}"),
-        ("use_http2", ParamValue::Categorical(idx)) => {
-            if *idx == 1 { "true" } else { "false" }.to_string()
-        }
-        ("load_balancing", ParamValue::Categorical(idx)) => {
-            ["round_robin", "least_connections", "random", "ip_hash"]
-                .get(*idx)
-                .unwrap_or(&"unknown")
-                .to_string()
-        }
-        (_, ParamValue::Categorical(idx)) => format!("category_{idx}"),
+fn format_param(value: &ParamValue) -> String {
+    match value {
+        ParamValue::Float(v) => format!("{v:.4}"),
+        ParamValue::Int(v) => format!("{v}"),
+        ParamValue::Categorical(idx) => format!("category_{idx}"),
     }
 }
 
@@ -226,23 +213,13 @@ fn print_best_config(study: &Study<f64>) -> optimizer::Result<()> {
     println!("  Score: {:.6}", best.value);
     println!("\n  Parameters:");
 
-    // Print parameters in a logical order
-    let param_order = [
-        "cache_size_mb",
-        "connection_pool_size",
-        "request_timeout_ms",
-        "retry_count",
-        "batch_size",
-        "compression_level",
-        "use_http2",
-        "load_balancing",
-    ];
-
-    for name in param_order {
-        if let Some(value) = best.params.get(name) {
-            let display = format_param(name, value);
-            println!("    {name}: {display}");
-        }
+    for (id, value) in &best.params {
+        let label = best
+            .param_labels
+            .get(id)
+            .map_or_else(|| format!("{id}"), |l| l.clone());
+        let display = format_param(value);
+        println!("    {label}: {display}");
     }
 
     Ok(())
@@ -284,7 +261,22 @@ async fn main() -> optimizer::Result<()> {
     // Step 2: Create a study to minimize the score
     let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
 
-    // Step 3: Configure optimization
+    // Step 3: Define parameter search spaces
+    let cache_size_mb_param = IntParam::new(64, 1024).step(64);
+    let connection_pool_size_param = IntParam::new(10, 200).step(10);
+    let request_timeout_ms_param = IntParam::new(1000, 10000).step(500);
+    let retry_count_param = IntParam::new(0, 5);
+    let batch_size_param = IntParam::new(1, 256).log_scale();
+    let compression_level_param = IntParam::new(0, 9);
+    let use_http2_param = BoolParam::new();
+    let load_balancing_param = CategoricalParam::new(vec![
+        "round_robin",
+        "least_connections",
+        "random",
+        "ip_hash",
+    ]);
+
+    // Step 4: Configure optimization
     let n_trials = 40;
     let concurrency = 4; // Run 4 trials in parallel
 
@@ -292,7 +284,7 @@ async fn main() -> optimizer::Result<()> {
 
     let start = Instant::now();
 
-    // Step 4: Run parallel async optimization
+    // Step 5: Run parallel async optimization
     //
     // optimize_parallel_with_sampler:
     // - Runs up to `concurrency` trials simultaneously
@@ -303,7 +295,30 @@ async fn main() -> optimizer::Result<()> {
     // The "_with_sampler" suffix means the TPE sampler gets access to
     // trial history for informed sampling.
     study
-        .optimize_parallel_with_sampler(n_trials, concurrency, objective)
+        .optimize_parallel_with_sampler(n_trials, concurrency, move |trial| {
+            let cache_size_mb_param = cache_size_mb_param.clone();
+            let connection_pool_size_param = connection_pool_size_param.clone();
+            let request_timeout_ms_param = request_timeout_ms_param.clone();
+            let retry_count_param = retry_count_param.clone();
+            let batch_size_param = batch_size_param.clone();
+            let compression_level_param = compression_level_param.clone();
+            let use_http2_param = use_http2_param.clone();
+            let load_balancing_param = load_balancing_param.clone();
+            async move {
+                objective(
+                    trial,
+                    &cache_size_mb_param,
+                    &connection_pool_size_param,
+                    &request_timeout_ms_param,
+                    &retry_count_param,
+                    &batch_size_param,
+                    &compression_level_param,
+                    &use_http2_param,
+                    &load_balancing_param,
+                )
+                .await
+            }
+        })
         .await?;
 
     let elapsed = start.elapsed();

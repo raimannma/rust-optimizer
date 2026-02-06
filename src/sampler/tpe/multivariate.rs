@@ -123,6 +123,7 @@ use super::{FixedGamma, GammaStrategy};
 use crate::distribution::Distribution;
 use crate::error::Result;
 use crate::param::ParamValue;
+use crate::parameter::ParamId;
 use crate::sampler::{CompletedTrial, PendingTrial, Sampler};
 
 /// Strategy for imputing objective values for pending/running trials during parallel optimization.
@@ -191,7 +192,7 @@ pub struct MultivariateTpeSampler {
     rng: Mutex<StdRng>,
     /// Cache for joint samples to maintain consistency across parameters within the same trial.
     /// The tuple contains (`trial_id`, cached joint sample).
-    joint_sample_cache: Mutex<Option<(u64, HashMap<String, ParamValue>)>>,
+    joint_sample_cache: Mutex<Option<(u64, HashMap<ParamId, ParamValue>)>>,
 }
 
 impl MultivariateTpeSampler {
@@ -306,6 +307,7 @@ impl MultivariateTpeSampler {
     ///     ConstantLiarStrategy, MultivariateTpeSampler, CompletedTrial, PendingTrial,
     /// };
     /// use optimizer::param::ParamValue;
+    /// use optimizer::parameter::ParamId;
     /// use optimizer::distribution::{Distribution, FloatDistribution};
     ///
     /// // Create a sampler with mean imputation
@@ -318,17 +320,20 @@ impl MultivariateTpeSampler {
     /// let dist = Distribution::Float(FloatDistribution {
     ///     low: 0.0, high: 1.0, log_scale: false, step: None,
     /// });
+    /// let x_id = ParamId::new();
     /// let completed = vec![
     ///     CompletedTrial::new(
     ///         0,
-    ///         [("x".to_string(), ParamValue::Float(0.2))].into_iter().collect(),
-    ///         [("x".to_string(), dist.clone())].into_iter().collect(),
+    ///         [(x_id, ParamValue::Float(0.2))].into_iter().collect(),
+    ///         [(x_id, dist.clone())].into_iter().collect(),
+    ///         HashMap::new(),
     ///         1.0,
     ///     ),
     ///     CompletedTrial::new(
     ///         1,
-    ///         [("x".to_string(), ParamValue::Float(0.8))].into_iter().collect(),
-    ///         [("x".to_string(), dist.clone())].into_iter().collect(),
+    ///         [(x_id, ParamValue::Float(0.8))].into_iter().collect(),
+    ///         [(x_id, dist.clone())].into_iter().collect(),
+    ///         HashMap::new(),
     ///         3.0,
     ///     ),
     /// ];
@@ -337,8 +342,9 @@ impl MultivariateTpeSampler {
     /// let pending = vec![
     ///     PendingTrial::new(
     ///         2,
-    ///         [("x".to_string(), ParamValue::Float(0.5))].into_iter().collect(),
-    ///         [("x".to_string(), dist.clone())].into_iter().collect(),
+    ///         [(x_id, ParamValue::Float(0.5))].into_iter().collect(),
+    ///         [(x_id, dist.clone())].into_iter().collect(),
+    ///         HashMap::new(),
     ///     ),
     /// ];
     ///
@@ -375,6 +381,7 @@ impl MultivariateTpeSampler {
                 pending.id,
                 pending.params.clone(),
                 pending.distributions.clone(),
+                HashMap::new(),
                 imputed_value,
             ));
         }
@@ -457,7 +464,7 @@ impl MultivariateTpeSampler {
     pub fn filter_trials<'a>(
         &self,
         history: &'a [CompletedTrial],
-        search_space: &HashMap<String, Distribution>,
+        search_space: &HashMap<ParamId, Distribution>,
     ) -> Vec<&'a CompletedTrial> {
         history
             .iter()
@@ -465,7 +472,7 @@ impl MultivariateTpeSampler {
                 // Include trial only if it has ALL parameters in the search space
                 search_space
                     .keys()
-                    .all(|param| trial.params.contains_key(param))
+                    .all(|param_id| trial.params.contains_key(param_id))
             })
             .collect()
     }
@@ -589,13 +596,16 @@ impl MultivariateTpeSampler {
     /// ```ignore
     /// use std::collections::HashMap;
     /// use optimizer::sampler::tpe::MultivariateTpeSampler;
+    /// use optimizer::parameter::ParamId;
     ///
     /// let sampler = MultivariateTpeSampler::new();
     /// let trials = vec![/* ... completed trials ... */];
     /// let filtered = sampler.filter_trials(&trials, &search_space);
     ///
     /// // Extract observations for x and y in that order
-    /// let param_order = vec!["x".to_string(), "y".to_string()];
+    /// let x_id = ParamId::new();
+    /// let y_id = ParamId::new();
+    /// let param_order = vec![x_id, y_id];
     /// let observations = sampler.extract_observations(&filtered, &param_order);
     ///
     /// // observations[i][0] is the x value for trial i
@@ -606,15 +616,15 @@ impl MultivariateTpeSampler {
     pub fn extract_observations(
         &self,
         trials: &[&CompletedTrial],
-        param_order: &[String],
+        param_order: &[ParamId],
     ) -> Vec<Vec<f64>> {
         trials
             .iter()
             .map(|trial| {
                 param_order
                     .iter()
-                    .filter_map(|param_name| {
-                        trial.params.get(param_name).and_then(|value| match value {
+                    .filter_map(|param_id| {
+                        trial.params.get(param_id).and_then(|value| match value {
                             crate::param::ParamValue::Float(f) => Some(*f),
                             crate::param::ParamValue::Int(i) => Some(*i as f64),
                             crate::param::ParamValue::Categorical(_) => None, // Skip categorical
@@ -758,12 +768,12 @@ impl MultivariateTpeSampler {
     #[allow(clippy::unused_self)]
     fn sample_all_uniform(
         &self,
-        search_space: &HashMap<String, Distribution>,
+        search_space: &HashMap<ParamId, Distribution>,
         rng: &mut rand::rngs::StdRng,
-    ) -> HashMap<String, ParamValue> {
+    ) -> HashMap<ParamId, ParamValue> {
         search_space
             .iter()
-            .map(|(name, dist)| (name.clone(), Self::sample_uniform_single(dist, rng)))
+            .map(|(id, dist)| (*id, Self::sample_uniform_single(dist, rng)))
             .collect()
     }
 
@@ -830,7 +840,7 @@ impl MultivariateTpeSampler {
     ///
     /// # Returns
     ///
-    /// A `HashMap<String, ParamValue>` containing sampled values for all parameters
+    /// A `HashMap<ParamId, ParamValue>` containing sampled values for all parameters
     /// in the search space.
     ///
     /// # Algorithm
@@ -855,6 +865,7 @@ impl MultivariateTpeSampler {
     /// ```ignore
     /// use std::collections::HashMap;
     /// use optimizer::sampler::tpe::MultivariateTpeSampler;
+    /// use optimizer::parameter::ParamId;
     /// use optimizer::distribution::{Distribution, FloatDistribution};
     ///
     /// let sampler = MultivariateTpeSampler::builder()
@@ -863,11 +874,13 @@ impl MultivariateTpeSampler {
     ///     .build()
     ///     .unwrap();
     ///
+    /// let x_id = ParamId::new();
+    /// let y_id = ParamId::new();
     /// let mut search_space = HashMap::new();
-    /// search_space.insert("x".to_string(), Distribution::Float(FloatDistribution {
+    /// search_space.insert(x_id, Distribution::Float(FloatDistribution {
     ///     low: 0.0, high: 1.0, log_scale: false, step: None,
     /// }));
-    /// search_space.insert("y".to_string(), Distribution::Float(FloatDistribution {
+    /// search_space.insert(y_id, Distribution::Float(FloatDistribution {
     ///     low: 0.0, high: 1.0, log_scale: false, step: None,
     /// }));
     ///
@@ -878,9 +891,9 @@ impl MultivariateTpeSampler {
     #[allow(clippy::too_many_lines)]
     pub fn sample_joint(
         &self,
-        search_space: &HashMap<String, Distribution>,
+        search_space: &HashMap<ParamId, Distribution>,
         history: &[CompletedTrial],
-    ) -> HashMap<String, ParamValue> {
+    ) -> HashMap<ParamId, ParamValue> {
         let mut rng = self.rng.lock();
 
         // Early returns for cases requiring random sampling
@@ -915,9 +928,9 @@ impl MultivariateTpeSampler {
     /// A `HashMap` mapping parameter names to their sampled values.
     fn sample_with_groups(
         &self,
-        search_space: &HashMap<String, Distribution>,
+        search_space: &HashMap<ParamId, Distribution>,
         history: &[CompletedTrial],
-    ) -> HashMap<String, ParamValue> {
+    ) -> HashMap<ParamId, ParamValue> {
         use std::collections::HashSet;
 
         use super::GroupDecomposedSearchSpace;
@@ -925,15 +938,15 @@ impl MultivariateTpeSampler {
         // Decompose the search space into independent parameter groups
         let groups = GroupDecomposedSearchSpace::calculate(history);
 
-        let mut result: HashMap<String, ParamValue> = HashMap::new();
+        let mut result: HashMap<ParamId, ParamValue> = HashMap::new();
 
         // Sample each group independently
         for group in &groups {
             // Build a sub-search space for this group
-            let group_search_space: HashMap<String, Distribution> = search_space
+            let group_search_space: HashMap<ParamId, Distribution> = search_space
                 .iter()
-                .filter(|(name, _)| group.contains(*name))
-                .map(|(name, dist)| (name.clone(), dist.clone()))
+                .filter(|(id, _)| group.contains(id))
+                .map(|(id, dist)| (*id, dist.clone()))
                 .collect();
 
             if group_search_space.is_empty() {
@@ -947,7 +960,7 @@ impl MultivariateTpeSampler {
                     trial
                         .distributions
                         .keys()
-                        .any(|param| group.contains(param))
+                        .any(|param_id| group.contains(param_id))
                 })
                 .collect();
 
@@ -963,25 +976,25 @@ impl MultivariateTpeSampler {
             drop(rng);
 
             // Merge group results into the main result
-            for (name, value) in group_result {
-                result.insert(name, value);
+            for (id, value) in group_result {
+                result.insert(id, value);
             }
         }
 
         // Handle parameters not in any group (sample independently)
-        let grouped_params: HashSet<String> = groups.iter().flatten().cloned().collect();
-        let ungrouped_params: HashMap<String, Distribution> = search_space
+        let grouped_params: HashSet<ParamId> = groups.iter().flatten().copied().collect();
+        let ungrouped_params: HashMap<ParamId, Distribution> = search_space
             .iter()
-            .filter(|(name, _)| !grouped_params.contains(*name) && !result.contains_key(*name))
-            .map(|(name, dist)| (name.clone(), dist.clone()))
+            .filter(|(id, _)| !grouped_params.contains(id) && !result.contains_key(id))
+            .map(|(id, dist)| (*id, dist.clone()))
             .collect();
 
         if !ungrouped_params.is_empty() {
             // Sample ungrouped parameters uniformly (no history for them)
             let mut rng = self.rng.lock();
-            for (name, dist) in &ungrouped_params {
+            for (id, dist) in &ungrouped_params {
                 let value = Self::sample_uniform_single(dist, &mut rng);
-                result.insert(name.clone(), value);
+                result.insert(*id, value);
             }
         }
 
@@ -1005,10 +1018,10 @@ impl MultivariateTpeSampler {
     #[allow(clippy::too_many_lines)]
     fn sample_single_group(
         &self,
-        search_space: &HashMap<String, Distribution>,
+        search_space: &HashMap<ParamId, Distribution>,
         history: &[CompletedTrial],
         rng: &mut StdRng,
-    ) -> HashMap<String, ParamValue> {
+    ) -> HashMap<ParamId, ParamValue> {
         use super::IntersectionSearchSpace;
         use crate::kde::MultivariateKDE;
 
@@ -1030,22 +1043,22 @@ impl MultivariateTpeSampler {
         let (good, bad) = self.split_trials(&filtered);
 
         // Sample categorical parameters using TPE with l(x)/g(x) ratio
-        let mut result: HashMap<String, ParamValue> = HashMap::new();
-        for (name, dist) in &intersection {
+        let mut result: HashMap<ParamId, ParamValue> = HashMap::new();
+        for (param_id, dist) in &intersection {
             if let Distribution::Categorical(d) = dist {
-                let good_indices = Self::extract_categorical_indices(&good, name);
-                let bad_indices = Self::extract_categorical_indices(&bad, name);
+                let good_indices = Self::extract_categorical_indices(&good, *param_id);
+                let bad_indices = Self::extract_categorical_indices(&bad, *param_id);
                 let idx =
                     Self::sample_tpe_categorical(d.n_choices, &good_indices, &bad_indices, rng);
-                result.insert(name.clone(), ParamValue::Categorical(idx));
+                result.insert(*param_id, ParamValue::Categorical(idx));
             }
         }
 
         // Collect continuous parameters
-        let mut param_order: Vec<String> = intersection
+        let mut param_order: Vec<ParamId> = intersection
             .iter()
             .filter(|(_, dist)| !matches!(dist, Distribution::Categorical(_)))
-            .map(|(name, _)| name.clone())
+            .map(|(id, _)| *id)
             .collect();
 
         if param_order.is_empty() {
@@ -1060,7 +1073,7 @@ impl MultivariateTpeSampler {
             return result;
         }
 
-        param_order.sort();
+        param_order.sort_by_key(|id| format!("{id}"));
 
         // Extract observations and validate
         let good_obs = self.extract_observations(&good, &param_order);
@@ -1111,13 +1124,13 @@ impl MultivariateTpeSampler {
 
         let selected = self.select_candidate_with_rng(&good_kde, &bad_kde, rng);
 
-        // Map selected values to parameter names
-        for (idx, param_name) in param_order.iter().enumerate() {
-            if let Some(dist) = intersection.get(param_name) {
+        // Map selected values to parameter ids
+        for (idx, param_id) in param_order.iter().enumerate() {
+            if let Some(dist) = intersection.get(param_id) {
                 let value = selected[idx];
                 let param_value = self.convert_to_param_value(value, dist);
                 if let Some(pv) = param_value {
-                    result.insert(param_name.clone(), pv);
+                    result.insert(*param_id, pv);
                 }
             }
         }
@@ -1173,15 +1186,15 @@ impl MultivariateTpeSampler {
     #[allow(dead_code)]
     fn fill_remaining_independent(
         &self,
-        search_space: &HashMap<String, Distribution>,
-        _intersection: &HashMap<String, Distribution>,
+        search_space: &HashMap<ParamId, Distribution>,
+        _intersection: &HashMap<ParamId, Distribution>,
         history: &[CompletedTrial],
-        result: &mut HashMap<String, ParamValue>,
+        result: &mut HashMap<ParamId, ParamValue>,
     ) {
         // Identify parameters not in result (and not in intersection)
-        let missing_params: Vec<(&String, &Distribution)> = search_space
+        let missing_params: Vec<(&ParamId, &Distribution)> = search_space
             .iter()
-            .filter(|(name, _)| !result.contains_key(*name))
+            .filter(|(id, _)| !result.contains_key(id))
             .collect();
 
         if missing_params.is_empty() {
@@ -1193,10 +1206,10 @@ impl MultivariateTpeSampler {
 
         let mut rng = self.rng.lock();
 
-        for (name, dist) in missing_params {
+        for (param_id, dist) in missing_params {
             let value =
-                self.sample_independent_tpe(name, dist, &good_trials, &bad_trials, &mut rng);
-            result.insert(name.clone(), value);
+                self.sample_independent_tpe(*param_id, dist, &good_trials, &bad_trials, &mut rng);
+            result.insert(*param_id, value);
         }
     }
 
@@ -1205,16 +1218,16 @@ impl MultivariateTpeSampler {
     /// This variant accepts an external RNG, used when the caller already holds the lock.
     fn fill_remaining_independent_with_rng(
         &self,
-        search_space: &HashMap<String, Distribution>,
-        _intersection: &HashMap<String, Distribution>,
+        search_space: &HashMap<ParamId, Distribution>,
+        _intersection: &HashMap<ParamId, Distribution>,
         history: &[CompletedTrial],
-        result: &mut HashMap<String, ParamValue>,
+        result: &mut HashMap<ParamId, ParamValue>,
         rng: &mut StdRng,
     ) {
         // Identify parameters not in result (and not in intersection)
-        let missing_params: Vec<(&String, &Distribution)> = search_space
+        let missing_params: Vec<(&ParamId, &Distribution)> = search_space
             .iter()
-            .filter(|(name, _)| !result.contains_key(*name))
+            .filter(|(id, _)| !result.contains_key(id))
             .collect();
 
         if missing_params.is_empty() {
@@ -1224,9 +1237,10 @@ impl MultivariateTpeSampler {
         // Split trials for independent sampling
         let (good_trials, bad_trials) = self.split_trials(&history.iter().collect::<Vec<_>>());
 
-        for (name, dist) in missing_params {
-            let value = self.sample_independent_tpe(name, dist, &good_trials, &bad_trials, rng);
-            result.insert(name.clone(), value);
+        for (param_id, dist) in missing_params {
+            let value =
+                self.sample_independent_tpe(*param_id, dist, &good_trials, &bad_trials, rng);
+            result.insert(*param_id, value);
         }
     }
 
@@ -1237,7 +1251,7 @@ impl MultivariateTpeSampler {
     #[allow(clippy::too_many_lines)]
     fn sample_independent_tpe(
         &self,
-        param_name: &str,
+        param_id: ParamId,
         distribution: &Distribution,
         good_trials: &[&CompletedTrial],
         bad_trials: &[&CompletedTrial],
@@ -1247,7 +1261,7 @@ impl MultivariateTpeSampler {
             Distribution::Float(d) => {
                 let good_values: Vec<f64> = good_trials
                     .iter()
-                    .filter_map(|t| t.params.get(param_name))
+                    .filter_map(|t| t.params.get(&param_id))
                     .filter_map(|v| match v {
                         ParamValue::Float(f) => Some(*f),
                         _ => None,
@@ -1257,7 +1271,7 @@ impl MultivariateTpeSampler {
 
                 let bad_values: Vec<f64> = bad_trials
                     .iter()
-                    .filter_map(|t| t.params.get(param_name))
+                    .filter_map(|t| t.params.get(&param_id))
                     .filter_map(|v| match v {
                         ParamValue::Float(f) => Some(*f),
                         _ => None,
@@ -1283,7 +1297,7 @@ impl MultivariateTpeSampler {
             Distribution::Int(d) => {
                 let good_values: Vec<i64> = good_trials
                     .iter()
-                    .filter_map(|t| t.params.get(param_name))
+                    .filter_map(|t| t.params.get(&param_id))
                     .filter_map(|v| match v {
                         ParamValue::Int(i) => Some(*i),
                         _ => None,
@@ -1293,7 +1307,7 @@ impl MultivariateTpeSampler {
 
                 let bad_values: Vec<i64> = bad_trials
                     .iter()
-                    .filter_map(|t| t.params.get(param_name))
+                    .filter_map(|t| t.params.get(&param_id))
                     .filter_map(|v| match v {
                         ParamValue::Int(i) => Some(*i),
                         _ => None,
@@ -1319,7 +1333,7 @@ impl MultivariateTpeSampler {
             Distribution::Categorical(d) => {
                 let good_indices: Vec<usize> = good_trials
                     .iter()
-                    .filter_map(|t| t.params.get(param_name))
+                    .filter_map(|t| t.params.get(&param_id))
                     .filter_map(|v| match v {
                         ParamValue::Categorical(i) => Some(*i),
                         _ => None,
@@ -1329,7 +1343,7 @@ impl MultivariateTpeSampler {
 
                 let bad_indices: Vec<usize> = bad_trials
                     .iter()
-                    .filter_map(|t| t.params.get(param_name))
+                    .filter_map(|t| t.params.get(&param_id))
                     .filter_map(|v| match v {
                         ParamValue::Categorical(i) => Some(*i),
                         _ => None,
@@ -1483,19 +1497,19 @@ impl MultivariateTpeSampler {
     #[allow(dead_code)] // Used by tests
     fn sample_all_independent(
         &self,
-        search_space: &HashMap<String, Distribution>,
+        search_space: &HashMap<ParamId, Distribution>,
         history: &[CompletedTrial],
-    ) -> HashMap<String, ParamValue> {
+    ) -> HashMap<ParamId, ParamValue> {
         // Split trials for independent sampling
         let (good_trials, bad_trials) = self.split_trials(&history.iter().collect::<Vec<_>>());
 
         let mut rng = self.rng.lock();
         let mut result = HashMap::new();
 
-        for (name, dist) in search_space {
+        for (param_id, dist) in search_space {
             let value =
-                self.sample_independent_tpe(name, dist, &good_trials, &bad_trials, &mut rng);
-            result.insert(name.clone(), value);
+                self.sample_independent_tpe(*param_id, dist, &good_trials, &bad_trials, &mut rng);
+            result.insert(*param_id, value);
         }
 
         result
@@ -1506,18 +1520,19 @@ impl MultivariateTpeSampler {
     /// This variant accepts an external RNG, used when the caller already holds the lock.
     fn sample_all_independent_with_rng(
         &self,
-        search_space: &HashMap<String, Distribution>,
+        search_space: &HashMap<ParamId, Distribution>,
         history: &[CompletedTrial],
         rng: &mut StdRng,
-    ) -> HashMap<String, ParamValue> {
+    ) -> HashMap<ParamId, ParamValue> {
         // Split trials for independent sampling
         let (good_trials, bad_trials) = self.split_trials(&history.iter().collect::<Vec<_>>());
 
         let mut result = HashMap::new();
 
-        for (name, dist) in search_space {
-            let value = self.sample_independent_tpe(name, dist, &good_trials, &bad_trials, rng);
-            result.insert(name.clone(), value);
+        for (param_id, dist) in search_space {
+            let value =
+                self.sample_independent_tpe(*param_id, dist, &good_trials, &bad_trials, rng);
+            result.insert(*param_id, value);
         }
 
         result
@@ -1608,11 +1623,11 @@ impl MultivariateTpeSampler {
     /// # Returns
     ///
     /// A vector of category indices from the trials.
-    fn extract_categorical_indices(trials: &[&CompletedTrial], param_name: &str) -> Vec<usize> {
+    fn extract_categorical_indices(trials: &[&CompletedTrial], param_id: ParamId) -> Vec<usize> {
         trials
             .iter()
             .filter_map(|trial| {
-                trial.params.get(param_name).and_then(|value| {
+                trial.params.get(&param_id).and_then(|value| {
                     if let ParamValue::Categorical(idx) = value {
                         Some(*idx)
                     } else {
@@ -1703,7 +1718,7 @@ impl MultivariateTpeSampler {
     /// distribution bounds and types.
     fn find_matching_param(
         distribution: &Distribution,
-        cached_sample: &HashMap<String, ParamValue>,
+        cached_sample: &HashMap<ParamId, ParamValue>,
     ) -> Option<ParamValue> {
         // Match by distribution type and value compatibility
         for value in cached_sample.values() {
@@ -1737,21 +1752,21 @@ impl MultivariateTpeSampler {
     fn build_search_space_from_history(
         current_distribution: &Distribution,
         history: &[CompletedTrial],
-    ) -> HashMap<String, Distribution> {
+    ) -> HashMap<ParamId, Distribution> {
         let mut search_space = HashMap::new();
 
         // Collect distributions from history
         for trial in history {
-            for (name, dist) in &trial.distributions {
+            for (param_id, dist) in &trial.distributions {
                 search_space
-                    .entry(name.clone())
+                    .entry(*param_id)
                     .or_insert_with(|| dist.clone());
             }
         }
 
         // If the search space is empty, create a placeholder for the current distribution
         if search_space.is_empty() {
-            search_space.insert("_current".to_string(), current_distribution.clone());
+            search_space.insert(ParamId::new(), current_distribution.clone());
         }
 
         search_space
@@ -2456,6 +2471,7 @@ mod tests {
         use super::*;
         use crate::distribution::FloatDistribution;
         use crate::param::ParamValue;
+        use crate::parameter::ParamId;
         use crate::sampler::{CompletedTrial, PendingTrial};
 
         fn float_dist() -> Distribution {
@@ -2468,19 +2484,21 @@ mod tests {
         }
 
         fn create_completed_trial(id: u64, x_value: f64, objective: f64) -> CompletedTrial {
+            let x_id = ParamId::new();
             let mut params = HashMap::new();
-            params.insert("x".to_string(), ParamValue::Float(x_value));
+            params.insert(x_id, ParamValue::Float(x_value));
             let mut distributions = HashMap::new();
-            distributions.insert("x".to_string(), float_dist());
-            CompletedTrial::new(id, params, distributions, objective)
+            distributions.insert(x_id, float_dist());
+            CompletedTrial::new(id, params, distributions, HashMap::new(), objective)
         }
 
         fn create_pending_trial(id: u64, x_value: f64) -> PendingTrial {
+            let x_id = ParamId::new();
             let mut params = HashMap::new();
-            params.insert("x".to_string(), ParamValue::Float(x_value));
+            params.insert(x_id, ParamValue::Float(x_value));
             let mut distributions = HashMap::new();
-            distributions.insert("x".to_string(), float_dist());
-            PendingTrial::new(id, params, distributions)
+            distributions.insert(x_id, float_dist());
+            PendingTrial::new(id, params, distributions, HashMap::new())
         }
 
         #[test]
@@ -2726,11 +2744,12 @@ mod tests {
             let completed = vec![create_completed_trial(0, 0.2, 1.0)];
 
             // Create a pending trial with specific parameter value
+            let x_id = ParamId::new();
             let mut params = HashMap::new();
-            params.insert("x".to_string(), ParamValue::Float(0.777));
+            params.insert(x_id, ParamValue::Float(0.777));
             let mut distributions = HashMap::new();
-            distributions.insert("x".to_string(), float_dist());
-            let pending = vec![PendingTrial::new(1, params, distributions)];
+            distributions.insert(x_id, float_dist());
+            let pending = vec![PendingTrial::new(1, params, distributions, HashMap::new())];
 
             let result = sampler.impute_pending_trials(&pending, &completed);
 
@@ -2739,14 +2758,14 @@ mod tests {
             let imputed = result.iter().find(|t| t.id == 1).unwrap();
 
             // Parameter value should be preserved
-            if let Some(ParamValue::Float(v)) = imputed.params.get("x") {
+            if let Some(ParamValue::Float(v)) = imputed.params.get(&x_id) {
                 assert!((*v - 0.777).abs() < f64::EPSILON);
             } else {
-                panic!("Expected Float parameter 'x'");
+                panic!("Expected Float parameter");
             }
 
             // Distribution should be preserved
-            assert!(imputed.distributions.contains_key("x"));
+            assert!(imputed.distributions.contains_key(&x_id));
         }
 
         #[test]
@@ -2800,20 +2819,21 @@ mod tests {
         use super::*;
         use crate::distribution::{FloatDistribution, IntDistribution};
         use crate::param::ParamValue;
+        use crate::parameter::ParamId;
         use crate::sampler::CompletedTrial;
 
         fn create_trial(
             id: u64,
-            params: Vec<(&str, ParamValue, Distribution)>,
+            params: Vec<(ParamId, ParamValue, Distribution)>,
             value: f64,
         ) -> CompletedTrial {
             let mut param_map = HashMap::new();
             let mut dist_map = HashMap::new();
-            for (name, pv, dist) in params {
-                param_map.insert(name.to_string(), pv);
-                dist_map.insert(name.to_string(), dist);
+            for (param_id, pv, dist) in params {
+                param_map.insert(param_id, pv);
+                dist_map.insert(param_id, dist);
             }
-            CompletedTrial::new(id, param_map, dist_map, value)
+            CompletedTrial::new(id, param_map, dist_map, HashMap::new(), value)
         }
 
         fn float_dist() -> Distribution {
@@ -2838,7 +2858,7 @@ mod tests {
         fn test_filter_trials_empty_history() {
             let sampler = MultivariateTpeSampler::new();
             let history: Vec<CompletedTrial> = vec![];
-            let search_space: HashMap<String, Distribution> = HashMap::new();
+            let search_space: HashMap<ParamId, Distribution> = HashMap::new();
 
             let filtered = sampler.filter_trials(&history, &search_space);
             assert!(filtered.is_empty());
@@ -2847,11 +2867,13 @@ mod tests {
         #[test]
         fn test_filter_trials_empty_search_space() {
             let sampler = MultivariateTpeSampler::new();
+            let x_id = ParamId::new();
+            let y_id = ParamId::new();
             let history = vec![
-                create_trial(0, vec![("x", ParamValue::Float(0.5), float_dist())], 1.0),
-                create_trial(1, vec![("y", ParamValue::Float(0.3), float_dist())], 0.5),
+                create_trial(0, vec![(x_id, ParamValue::Float(0.5), float_dist())], 1.0),
+                create_trial(1, vec![(y_id, ParamValue::Float(0.3), float_dist())], 0.5),
             ];
-            let search_space: HashMap<String, Distribution> = HashMap::new();
+            let search_space: HashMap<ParamId, Distribution> = HashMap::new();
 
             // With empty search space, all trials should pass (vacuously true)
             let filtered = sampler.filter_trials(&history, &search_space);
@@ -2861,28 +2883,30 @@ mod tests {
         #[test]
         fn test_filter_trials_all_match() {
             let sampler = MultivariateTpeSampler::new();
+            let x_id = ParamId::new();
+            let y_id = ParamId::new();
             let history = vec![
                 create_trial(
                     0,
                     vec![
-                        ("x", ParamValue::Float(0.5), float_dist()),
-                        ("y", ParamValue::Float(0.3), float_dist()),
+                        (x_id, ParamValue::Float(0.5), float_dist()),
+                        (y_id, ParamValue::Float(0.3), float_dist()),
                     ],
                     1.0,
                 ),
                 create_trial(
                     1,
                     vec![
-                        ("x", ParamValue::Float(0.7), float_dist()),
-                        ("y", ParamValue::Float(0.2), float_dist()),
+                        (x_id, ParamValue::Float(0.7), float_dist()),
+                        (y_id, ParamValue::Float(0.2), float_dist()),
                     ],
                     0.5,
                 ),
             ];
 
             let mut search_space = HashMap::new();
-            search_space.insert("x".to_string(), float_dist());
-            search_space.insert("y".to_string(), float_dist());
+            search_space.insert(x_id, float_dist());
+            search_space.insert(y_id, float_dist());
 
             let filtered = sampler.filter_trials(&history, &search_space);
             assert_eq!(filtered.len(), 2);
@@ -2893,6 +2917,8 @@ mod tests {
         #[test]
         fn test_filter_trials_partial_match() {
             let sampler = MultivariateTpeSampler::new();
+            let x_id = ParamId::new();
+            let y_id = ParamId::new();
 
             // Trial 0: has x and y
             // Trial 1: has only x
@@ -2901,17 +2927,17 @@ mod tests {
                 create_trial(
                     0,
                     vec![
-                        ("x", ParamValue::Float(0.5), float_dist()),
-                        ("y", ParamValue::Float(0.3), float_dist()),
+                        (x_id, ParamValue::Float(0.5), float_dist()),
+                        (y_id, ParamValue::Float(0.3), float_dist()),
                     ],
                     1.0,
                 ),
-                create_trial(1, vec![("x", ParamValue::Float(0.7), float_dist())], 0.5),
+                create_trial(1, vec![(x_id, ParamValue::Float(0.7), float_dist())], 0.5),
                 create_trial(
                     2,
                     vec![
-                        ("x", ParamValue::Float(0.6), float_dist()),
-                        ("y", ParamValue::Float(0.4), float_dist()),
+                        (x_id, ParamValue::Float(0.6), float_dist()),
+                        (y_id, ParamValue::Float(0.4), float_dist()),
                     ],
                     0.8,
                 ),
@@ -2919,8 +2945,8 @@ mod tests {
 
             // Search space requires both x and y
             let mut search_space = HashMap::new();
-            search_space.insert("x".to_string(), float_dist());
-            search_space.insert("y".to_string(), float_dist());
+            search_space.insert(x_id, float_dist());
+            search_space.insert(y_id, float_dist());
 
             let filtered = sampler.filter_trials(&history, &search_space);
 
@@ -2933,30 +2959,33 @@ mod tests {
         #[test]
         fn test_filter_trials_none_match() {
             let sampler = MultivariateTpeSampler::new();
+            let x_id = ParamId::new();
+            let y_id = ParamId::new();
+            let z_id = ParamId::new();
 
             // All trials have x, but search space requires both x and z
             let history = vec![
                 create_trial(
                     0,
                     vec![
-                        ("x", ParamValue::Float(0.5), float_dist()),
-                        ("y", ParamValue::Float(0.3), float_dist()),
+                        (x_id, ParamValue::Float(0.5), float_dist()),
+                        (y_id, ParamValue::Float(0.3), float_dist()),
                     ],
                     1.0,
                 ),
                 create_trial(
                     1,
                     vec![
-                        ("x", ParamValue::Float(0.7), float_dist()),
-                        ("y", ParamValue::Float(0.2), float_dist()),
+                        (x_id, ParamValue::Float(0.7), float_dist()),
+                        (y_id, ParamValue::Float(0.2), float_dist()),
                     ],
                     0.5,
                 ),
             ];
 
             let mut search_space = HashMap::new();
-            search_space.insert("x".to_string(), float_dist());
-            search_space.insert("z".to_string(), float_dist()); // No trial has z
+            search_space.insert(x_id, float_dist());
+            search_space.insert(z_id, float_dist()); // No trial has z
 
             let filtered = sampler.filter_trials(&history, &search_space);
 
@@ -2967,32 +2996,35 @@ mod tests {
         #[test]
         fn test_filter_trials_mixed_param_types() {
             let sampler = MultivariateTpeSampler::new();
+            let lr_id = ParamId::new();
+            let layers_id = ParamId::new();
+            let dropout_id = ParamId::new();
 
             // Trials with mixed parameter types
             let history = vec![
                 create_trial(
                     0,
                     vec![
-                        ("learning_rate", ParamValue::Float(0.01), float_dist()),
-                        ("n_layers", ParamValue::Int(3), int_dist()),
+                        (lr_id, ParamValue::Float(0.01), float_dist()),
+                        (layers_id, ParamValue::Int(3), int_dist()),
                     ],
                     1.0,
                 ),
                 create_trial(
                     1,
                     vec![
-                        ("learning_rate", ParamValue::Float(0.001), float_dist()),
-                        ("n_layers", ParamValue::Int(5), int_dist()),
-                        ("dropout", ParamValue::Float(0.2), float_dist()), // Extra param
+                        (lr_id, ParamValue::Float(0.001), float_dist()),
+                        (layers_id, ParamValue::Int(5), int_dist()),
+                        (dropout_id, ParamValue::Float(0.2), float_dist()), // Extra param
                     ],
                     0.8,
                 ),
                 create_trial(
                     2,
                     vec![
-                        ("learning_rate", ParamValue::Float(0.005), float_dist()),
+                        (lr_id, ParamValue::Float(0.005), float_dist()),
                         // Missing n_layers
-                        ("dropout", ParamValue::Float(0.1), float_dist()),
+                        (dropout_id, ParamValue::Float(0.1), float_dist()),
                     ],
                     0.9,
                 ),
@@ -3000,8 +3032,8 @@ mod tests {
 
             // Search space requires learning_rate and n_layers
             let mut search_space = HashMap::new();
-            search_space.insert("learning_rate".to_string(), float_dist());
-            search_space.insert("n_layers".to_string(), int_dist());
+            search_space.insert(lr_id, float_dist());
+            search_space.insert(layers_id, int_dist());
 
             let filtered = sampler.filter_trials(&history, &search_space);
 
@@ -3014,24 +3046,28 @@ mod tests {
         #[test]
         fn test_filter_trials_superset_params_accepted() {
             let sampler = MultivariateTpeSampler::new();
+            let x_id = ParamId::new();
+            let y_id = ParamId::new();
+            let z_id = ParamId::new();
+            let w_id = ParamId::new();
 
             // All trials have more params than the search space requires
             let history = vec![
                 create_trial(
                     0,
                     vec![
-                        ("x", ParamValue::Float(0.5), float_dist()),
-                        ("y", ParamValue::Float(0.3), float_dist()),
-                        ("z", ParamValue::Float(0.1), float_dist()),
+                        (x_id, ParamValue::Float(0.5), float_dist()),
+                        (y_id, ParamValue::Float(0.3), float_dist()),
+                        (z_id, ParamValue::Float(0.1), float_dist()),
                     ],
                     1.0,
                 ),
                 create_trial(
                     1,
                     vec![
-                        ("x", ParamValue::Float(0.7), float_dist()),
-                        ("y", ParamValue::Float(0.2), float_dist()),
-                        ("w", ParamValue::Float(0.9), float_dist()), // Different extra param
+                        (x_id, ParamValue::Float(0.7), float_dist()),
+                        (y_id, ParamValue::Float(0.2), float_dist()),
+                        (w_id, ParamValue::Float(0.9), float_dist()), // Different extra param
                     ],
                     0.5,
                 ),
@@ -3039,7 +3075,7 @@ mod tests {
 
             // Search space only requires x
             let mut search_space = HashMap::new();
-            search_space.insert("x".to_string(), float_dist());
+            search_space.insert(x_id, float_dist());
 
             let filtered = sampler.filter_trials(&history, &search_space);
 
@@ -3050,13 +3086,14 @@ mod tests {
         #[test]
         fn test_filter_trials_preserves_order() {
             let sampler = MultivariateTpeSampler::new();
+            let x_id = ParamId::new();
 
             let history: Vec<CompletedTrial> = (0..10)
-                .map(|i| create_trial(i, vec![("x", ParamValue::Float(0.5), float_dist())], 1.0))
+                .map(|i| create_trial(i, vec![(x_id, ParamValue::Float(0.5), float_dist())], 1.0))
                 .collect();
 
             let mut search_space = HashMap::new();
-            search_space.insert("x".to_string(), float_dist());
+            search_space.insert(x_id, float_dist());
 
             let filtered = sampler.filter_trials(&history, &search_space);
 
@@ -3071,24 +3108,26 @@ mod tests {
         #[test]
         fn test_filter_trials_single_param_search_space() {
             let sampler = MultivariateTpeSampler::new();
+            let x_id = ParamId::new();
+            let y_id = ParamId::new();
 
             // Some trials have the required param, some don't
             let history = vec![
                 create_trial(
                     0,
                     vec![
-                        ("x", ParamValue::Float(0.5), float_dist()),
-                        ("y", ParamValue::Float(0.3), float_dist()),
+                        (x_id, ParamValue::Float(0.5), float_dist()),
+                        (y_id, ParamValue::Float(0.3), float_dist()),
                     ],
                     1.0,
                 ),
-                create_trial(1, vec![("y", ParamValue::Float(0.7), float_dist())], 0.5),
-                create_trial(2, vec![("x", ParamValue::Float(0.6), float_dist())], 0.8),
+                create_trial(1, vec![(y_id, ParamValue::Float(0.7), float_dist())], 0.5),
+                create_trial(2, vec![(x_id, ParamValue::Float(0.6), float_dist())], 0.8),
             ];
 
             // Search space only requires x
             let mut search_space = HashMap::new();
-            search_space.insert("x".to_string(), float_dist());
+            search_space.insert(x_id, float_dist());
 
             let filtered = sampler.filter_trials(&history, &search_space);
 
@@ -3110,6 +3149,7 @@ mod tests {
         use super::*;
         use crate::distribution::FloatDistribution;
         use crate::param::ParamValue;
+        use crate::parameter::ParamId;
         use crate::sampler::CompletedTrial;
 
         fn create_trial(id: u64, value: f64) -> CompletedTrial {
@@ -3119,11 +3159,12 @@ mod tests {
                 log_scale: false,
                 step: None,
             });
+            let x_id = ParamId::new();
             let mut params = HashMap::new();
-            params.insert("x".to_string(), ParamValue::Float(0.5));
+            params.insert(x_id, ParamValue::Float(0.5));
             let mut distributions = HashMap::new();
-            distributions.insert("x".to_string(), float_dist);
-            CompletedTrial::new(id, params, distributions, value)
+            distributions.insert(x_id, float_dist);
+            CompletedTrial::new(id, params, distributions, HashMap::new(), value)
         }
 
         #[test]
@@ -3387,6 +3428,8 @@ mod tests {
         fn test_split_trials_integration_with_filter() {
             // Test that split_trials works correctly with filter_trials output
             let sampler = MultivariateTpeSampler::new();
+            let x_id = ParamId::new();
+            let y_id = ParamId::new();
 
             let float_dist = Distribution::Float(FloatDistribution {
                 low: 0.0,
@@ -3399,17 +3442,23 @@ mod tests {
             let mut trials_vec = vec![];
             for i in 0..10 {
                 let mut params = HashMap::new();
-                params.insert("x".to_string(), ParamValue::Float(i as f64 / 10.0));
-                params.insert("y".to_string(), ParamValue::Float(i as f64 / 10.0));
+                params.insert(x_id, ParamValue::Float(i as f64 / 10.0));
+                params.insert(y_id, ParamValue::Float(i as f64 / 10.0));
                 let mut distributions = HashMap::new();
-                distributions.insert("x".to_string(), float_dist.clone());
-                distributions.insert("y".to_string(), float_dist.clone());
-                trials_vec.push(CompletedTrial::new(i, params, distributions, i as f64));
+                distributions.insert(x_id, float_dist.clone());
+                distributions.insert(y_id, float_dist.clone());
+                trials_vec.push(CompletedTrial::new(
+                    i,
+                    params,
+                    distributions,
+                    HashMap::new(),
+                    i as f64,
+                ));
             }
 
             let mut search_space = HashMap::new();
-            search_space.insert("x".to_string(), float_dist.clone());
-            search_space.insert("y".to_string(), float_dist);
+            search_space.insert(x_id, float_dist.clone());
+            search_space.insert(y_id, float_dist);
 
             // Filter trials
             let filtered = sampler.filter_trials(&trials_vec, &search_space);
@@ -3440,6 +3489,7 @@ mod tests {
         use super::*;
         use crate::distribution::{CategoricalDistribution, FloatDistribution, IntDistribution};
         use crate::param::ParamValue;
+        use crate::parameter::ParamId;
         use crate::sampler::CompletedTrial;
 
         fn float_dist() -> Distribution {
@@ -3466,23 +3516,23 @@ mod tests {
 
         fn create_trial(
             id: u64,
-            params: Vec<(&str, ParamValue, Distribution)>,
+            params: Vec<(ParamId, ParamValue, Distribution)>,
             value: f64,
         ) -> CompletedTrial {
             let mut param_map = HashMap::new();
             let mut dist_map = HashMap::new();
-            for (name, pv, dist) in params {
-                param_map.insert(name.to_string(), pv);
-                dist_map.insert(name.to_string(), dist);
+            for (param_id, pv, dist) in params {
+                param_map.insert(param_id, pv);
+                dist_map.insert(param_id, dist);
             }
-            CompletedTrial::new(id, param_map, dist_map, value)
+            CompletedTrial::new(id, param_map, dist_map, HashMap::new(), value)
         }
 
         #[test]
         fn test_extract_observations_empty_trials() {
             let sampler = MultivariateTpeSampler::new();
             let trials: Vec<&CompletedTrial> = vec![];
-            let param_order = vec!["x".to_string(), "y".to_string()];
+            let param_order = vec![ParamId::new(), ParamId::new()];
 
             let observations = sampler.extract_observations(&trials, &param_order);
 
@@ -3492,9 +3542,10 @@ mod tests {
         #[test]
         fn test_extract_observations_empty_param_order() {
             let sampler = MultivariateTpeSampler::new();
-            let trial = create_trial(0, vec![("x", ParamValue::Float(0.5), float_dist())], 1.0);
+            let x_id = ParamId::new();
+            let trial = create_trial(0, vec![(x_id, ParamValue::Float(0.5), float_dist())], 1.0);
             let trials: Vec<&CompletedTrial> = vec![&trial];
-            let param_order: Vec<String> = vec![];
+            let param_order: Vec<ParamId> = vec![];
 
             let observations = sampler.extract_observations(&trials, &param_order);
 
@@ -3506,13 +3557,14 @@ mod tests {
         #[test]
         fn test_extract_observations_single_float_param() {
             let sampler = MultivariateTpeSampler::new();
+            let x_id = ParamId::new();
             let trial_data = [
-                create_trial(0, vec![("x", ParamValue::Float(0.1), float_dist())], 1.0),
-                create_trial(1, vec![("x", ParamValue::Float(0.5), float_dist())], 0.5),
-                create_trial(2, vec![("x", ParamValue::Float(0.9), float_dist())], 0.8),
+                create_trial(0, vec![(x_id, ParamValue::Float(0.1), float_dist())], 1.0),
+                create_trial(1, vec![(x_id, ParamValue::Float(0.5), float_dist())], 0.5),
+                create_trial(2, vec![(x_id, ParamValue::Float(0.9), float_dist())], 0.8),
             ];
             let trials: Vec<&CompletedTrial> = trial_data.iter().collect();
-            let param_order = vec!["x".to_string()];
+            let param_order = vec![x_id];
 
             let observations = sampler.extract_observations(&trials, &param_order);
 
@@ -3526,26 +3578,28 @@ mod tests {
         #[test]
         fn test_extract_observations_multiple_float_params() {
             let sampler = MultivariateTpeSampler::new();
+            let x_id = ParamId::new();
+            let y_id = ParamId::new();
             let trial_data = [
                 create_trial(
                     0,
                     vec![
-                        ("x", ParamValue::Float(0.1), float_dist()),
-                        ("y", ParamValue::Float(0.2), float_dist()),
+                        (x_id, ParamValue::Float(0.1), float_dist()),
+                        (y_id, ParamValue::Float(0.2), float_dist()),
                     ],
                     1.0,
                 ),
                 create_trial(
                     1,
                     vec![
-                        ("x", ParamValue::Float(0.3), float_dist()),
-                        ("y", ParamValue::Float(0.4), float_dist()),
+                        (x_id, ParamValue::Float(0.3), float_dist()),
+                        (y_id, ParamValue::Float(0.4), float_dist()),
                     ],
                     0.5,
                 ),
             ];
             let trials: Vec<&CompletedTrial> = trial_data.iter().collect();
-            let param_order = vec!["x".to_string(), "y".to_string()];
+            let param_order = vec![x_id, y_id];
 
             let observations = sampler.extract_observations(&trials, &param_order);
 
@@ -3560,21 +3614,24 @@ mod tests {
         #[test]
         fn test_extract_observations_respects_param_order() {
             let sampler = MultivariateTpeSampler::new();
+            let a_id = ParamId::new();
+            let b_id = ParamId::new();
+            let c_id = ParamId::new();
             let trial = create_trial(
                 0,
                 vec![
-                    ("a", ParamValue::Float(1.0), float_dist()),
-                    ("b", ParamValue::Float(2.0), float_dist()),
-                    ("c", ParamValue::Float(3.0), float_dist()),
+                    (a_id, ParamValue::Float(1.0), float_dist()),
+                    (b_id, ParamValue::Float(2.0), float_dist()),
+                    (c_id, ParamValue::Float(3.0), float_dist()),
                 ],
                 1.0,
             );
             let trials: Vec<&CompletedTrial> = vec![&trial];
 
             // Different orderings
-            let order_abc = vec!["a".to_string(), "b".to_string(), "c".to_string()];
-            let order_cba = vec!["c".to_string(), "b".to_string(), "a".to_string()];
-            let order_bac = vec!["b".to_string(), "a".to_string(), "c".to_string()];
+            let order_abc = vec![a_id, b_id, c_id];
+            let order_cba = vec![c_id, b_id, a_id];
+            let order_bac = vec![b_id, a_id, c_id];
 
             let obs_abc = sampler.extract_observations(&trials, &order_abc);
             let obs_cba = sampler.extract_observations(&trials, &order_cba);
@@ -3596,13 +3653,14 @@ mod tests {
         #[test]
         fn test_extract_observations_int_conversion() {
             let sampler = MultivariateTpeSampler::new();
+            let n_layers_id = ParamId::new();
             let trial_data = [
-                create_trial(0, vec![("n_layers", ParamValue::Int(3), int_dist())], 1.0),
-                create_trial(1, vec![("n_layers", ParamValue::Int(5), int_dist())], 0.5),
-                create_trial(2, vec![("n_layers", ParamValue::Int(10), int_dist())], 0.8),
+                create_trial(0, vec![(n_layers_id, ParamValue::Int(3), int_dist())], 1.0),
+                create_trial(1, vec![(n_layers_id, ParamValue::Int(5), int_dist())], 0.5),
+                create_trial(2, vec![(n_layers_id, ParamValue::Int(10), int_dist())], 0.8),
             ];
             let trials: Vec<&CompletedTrial> = trial_data.iter().collect();
-            let param_order = vec!["n_layers".to_string()];
+            let param_order = vec![n_layers_id];
 
             let observations = sampler.extract_observations(&trials, &param_order);
 
@@ -3615,32 +3673,31 @@ mod tests {
         #[test]
         fn test_extract_observations_mixed_float_and_int() {
             let sampler = MultivariateTpeSampler::new();
+            let lr_id = ParamId::new();
+            let n_layers_id = ParamId::new();
+            let batch_size_id = ParamId::new();
             let trial_data = [
                 create_trial(
                     0,
                     vec![
-                        ("learning_rate", ParamValue::Float(0.01), float_dist()),
-                        ("n_layers", ParamValue::Int(3), int_dist()),
-                        ("batch_size", ParamValue::Int(32), int_dist()),
+                        (lr_id, ParamValue::Float(0.01), float_dist()),
+                        (n_layers_id, ParamValue::Int(3), int_dist()),
+                        (batch_size_id, ParamValue::Int(32), int_dist()),
                     ],
                     1.0,
                 ),
                 create_trial(
                     1,
                     vec![
-                        ("learning_rate", ParamValue::Float(0.001), float_dist()),
-                        ("n_layers", ParamValue::Int(5), int_dist()),
-                        ("batch_size", ParamValue::Int(64), int_dist()),
+                        (lr_id, ParamValue::Float(0.001), float_dist()),
+                        (n_layers_id, ParamValue::Int(5), int_dist()),
+                        (batch_size_id, ParamValue::Int(64), int_dist()),
                     ],
                     0.5,
                 ),
             ];
             let trials: Vec<&CompletedTrial> = trial_data.iter().collect();
-            let param_order = vec![
-                "learning_rate".to_string(),
-                "n_layers".to_string(),
-                "batch_size".to_string(),
-            ];
+            let param_order = vec![lr_id, n_layers_id, batch_size_id];
 
             let observations = sampler.extract_observations(&trials, &param_order);
 
@@ -3659,22 +3716,33 @@ mod tests {
         #[test]
         fn test_extract_observations_skips_categorical() {
             let sampler = MultivariateTpeSampler::new();
+            let x_id = ParamId::new();
+            let optimizer_id = ParamId::new();
+            let y_id = ParamId::new();
             let trial_data = [
                 create_trial(
                     0,
                     vec![
-                        ("x", ParamValue::Float(0.5), float_dist()),
-                        ("optimizer", ParamValue::Categorical(1), categorical_dist(3)),
-                        ("y", ParamValue::Float(0.3), float_dist()),
+                        (x_id, ParamValue::Float(0.5), float_dist()),
+                        (
+                            optimizer_id,
+                            ParamValue::Categorical(1),
+                            categorical_dist(3),
+                        ),
+                        (y_id, ParamValue::Float(0.3), float_dist()),
                     ],
                     1.0,
                 ),
                 create_trial(
                     1,
                     vec![
-                        ("x", ParamValue::Float(0.7), float_dist()),
-                        ("optimizer", ParamValue::Categorical(0), categorical_dist(3)),
-                        ("y", ParamValue::Float(0.2), float_dist()),
+                        (x_id, ParamValue::Float(0.7), float_dist()),
+                        (
+                            optimizer_id,
+                            ParamValue::Categorical(0),
+                            categorical_dist(3),
+                        ),
+                        (y_id, ParamValue::Float(0.2), float_dist()),
                     ],
                     0.5,
                 ),
@@ -3682,7 +3750,7 @@ mod tests {
             let trials: Vec<&CompletedTrial> = trial_data.iter().collect();
 
             // Include categorical in param order - it should be skipped
-            let param_order = vec!["x".to_string(), "optimizer".to_string(), "y".to_string()];
+            let param_order = vec![x_id, optimizer_id, y_id];
 
             let observations = sampler.extract_observations(&trials, &param_order);
 
@@ -3703,18 +3771,24 @@ mod tests {
         #[test]
         fn test_extract_observations_only_categorical_in_order() {
             let sampler = MultivariateTpeSampler::new();
+            let x_id = ParamId::new();
+            let optimizer_id = ParamId::new();
             let trial = create_trial(
                 0,
                 vec![
-                    ("x", ParamValue::Float(0.5), float_dist()),
-                    ("optimizer", ParamValue::Categorical(1), categorical_dist(3)),
+                    (x_id, ParamValue::Float(0.5), float_dist()),
+                    (
+                        optimizer_id,
+                        ParamValue::Categorical(1),
+                        categorical_dist(3),
+                    ),
                 ],
                 1.0,
             );
             let trials: Vec<&CompletedTrial> = vec![&trial];
 
             // Only request categorical param
-            let param_order = vec!["optimizer".to_string()];
+            let param_order = vec![optimizer_id];
 
             let observations = sampler.extract_observations(&trials, &param_order);
 
@@ -3726,20 +3800,22 @@ mod tests {
         #[test]
         fn test_extract_observations_missing_param() {
             let sampler = MultivariateTpeSampler::new();
+            let x_id = ParamId::new();
+            let y_id = ParamId::new();
             let trial_data = [
                 create_trial(
                     0,
                     vec![
-                        ("x", ParamValue::Float(0.5), float_dist()),
-                        ("y", ParamValue::Float(0.3), float_dist()),
+                        (x_id, ParamValue::Float(0.5), float_dist()),
+                        (y_id, ParamValue::Float(0.3), float_dist()),
                     ],
                     1.0,
                 ),
-                // This trial is missing "y"
-                create_trial(1, vec![("x", ParamValue::Float(0.7), float_dist())], 0.5),
+                // This trial is missing y
+                create_trial(1, vec![(x_id, ParamValue::Float(0.7), float_dist())], 0.5),
             ];
             let trials: Vec<&CompletedTrial> = trial_data.iter().collect();
-            let param_order = vec!["x".to_string(), "y".to_string()];
+            let param_order = vec![x_id, y_id];
 
             let observations = sampler.extract_observations(&trials, &param_order);
 
@@ -3752,22 +3828,21 @@ mod tests {
         #[test]
         fn test_extract_observations_large_int_values() {
             let sampler = MultivariateTpeSampler::new();
+            let small_int_id = ParamId::new();
+            let medium_int_id = ParamId::new();
+            let negative_int_id = ParamId::new();
             // Test with large integer values to verify precision
             let trial = create_trial(
                 0,
                 vec![
-                    ("small_int", ParamValue::Int(1), int_dist()),
-                    ("medium_int", ParamValue::Int(1_000_000), int_dist()),
-                    ("negative_int", ParamValue::Int(-42), int_dist()),
+                    (small_int_id, ParamValue::Int(1), int_dist()),
+                    (medium_int_id, ParamValue::Int(1_000_000), int_dist()),
+                    (negative_int_id, ParamValue::Int(-42), int_dist()),
                 ],
                 1.0,
             );
             let trials: Vec<&CompletedTrial> = vec![&trial];
-            let param_order = vec![
-                "small_int".to_string(),
-                "medium_int".to_string(),
-                "negative_int".to_string(),
-            ];
+            let param_order = vec![small_int_id, medium_int_id, negative_int_id];
 
             let observations = sampler.extract_observations(&trials, &param_order);
 
@@ -3781,6 +3856,8 @@ mod tests {
         #[test]
         fn test_extract_observations_many_trials() {
             let sampler = MultivariateTpeSampler::new();
+            let x_id = ParamId::new();
+            let y_id = ParamId::new();
 
             // Create 100 trials with predictable values
             let trial_data: Vec<CompletedTrial> = (0..100)
@@ -3788,15 +3865,15 @@ mod tests {
                     create_trial(
                         i,
                         vec![
-                            ("x", ParamValue::Float(i as f64 / 100.0), float_dist()),
-                            ("y", ParamValue::Int(i as i64), int_dist()),
+                            (x_id, ParamValue::Float(i as f64 / 100.0), float_dist()),
+                            (y_id, ParamValue::Int(i as i64), int_dist()),
                         ],
                         i as f64,
                     )
                 })
                 .collect();
             let trials: Vec<&CompletedTrial> = trial_data.iter().collect();
-            let param_order = vec!["x".to_string(), "y".to_string()];
+            let param_order = vec![x_id, y_id];
 
             let observations = sampler.extract_observations(&trials, &param_order);
 
@@ -3811,20 +3888,24 @@ mod tests {
         #[test]
         fn test_extract_observations_subset_of_params() {
             let sampler = MultivariateTpeSampler::new();
+            let a_id = ParamId::new();
+            let b_id = ParamId::new();
+            let c_id = ParamId::new();
+            let d_id = ParamId::new();
             let trial = create_trial(
                 0,
                 vec![
-                    ("a", ParamValue::Float(1.0), float_dist()),
-                    ("b", ParamValue::Float(2.0), float_dist()),
-                    ("c", ParamValue::Float(3.0), float_dist()),
-                    ("d", ParamValue::Float(4.0), float_dist()),
+                    (a_id, ParamValue::Float(1.0), float_dist()),
+                    (b_id, ParamValue::Float(2.0), float_dist()),
+                    (c_id, ParamValue::Float(3.0), float_dist()),
+                    (d_id, ParamValue::Float(4.0), float_dist()),
                 ],
                 1.0,
             );
             let trials: Vec<&CompletedTrial> = vec![&trial];
 
             // Only extract a subset of params
-            let param_order = vec!["b".to_string(), "d".to_string()];
+            let param_order = vec![b_id, d_id];
 
             let observations = sampler.extract_observations(&trials, &param_order);
 
@@ -3839,24 +3920,26 @@ mod tests {
             // Test full pipeline: filter -> split -> extract
             let sampler = MultivariateTpeSampler::new();
 
+            let x_id = ParamId::new();
+            let n_id = ParamId::new();
             let float_dist_val = float_dist();
             let int_dist_val = int_dist();
 
             let trial_data: Vec<CompletedTrial> = (0..20)
                 .map(|i| {
                     let mut params = HashMap::new();
-                    params.insert("x".to_string(), ParamValue::Float(i as f64 / 20.0));
-                    params.insert("n".to_string(), ParamValue::Int(i as i64));
+                    params.insert(x_id, ParamValue::Float(i as f64 / 20.0));
+                    params.insert(n_id, ParamValue::Int(i as i64));
                     let mut distributions = HashMap::new();
-                    distributions.insert("x".to_string(), float_dist_val.clone());
-                    distributions.insert("n".to_string(), int_dist_val.clone());
-                    CompletedTrial::new(i, params, distributions, i as f64)
+                    distributions.insert(x_id, float_dist_val.clone());
+                    distributions.insert(n_id, int_dist_val.clone());
+                    CompletedTrial::new(i, params, distributions, HashMap::new(), i as f64)
                 })
                 .collect();
 
             let mut search_space = HashMap::new();
-            search_space.insert("x".to_string(), float_dist_val);
-            search_space.insert("n".to_string(), int_dist_val);
+            search_space.insert(x_id, float_dist_val);
+            search_space.insert(n_id, int_dist_val);
 
             // Filter
             let filtered = sampler.filter_trials(&trial_data, &search_space);
@@ -3868,7 +3951,7 @@ mod tests {
             assert_eq!(bad.len(), 15);
 
             // Extract from good trials
-            let param_order = vec!["x".to_string(), "n".to_string()];
+            let param_order = vec![x_id, n_id];
             let good_obs = sampler.extract_observations(&good, &param_order);
             let bad_obs = sampler.extract_observations(&bad, &param_order);
 
@@ -4182,6 +4265,7 @@ mod tests {
             // Full integration test: extract observations -> fit KDEs -> select candidate
             use crate::distribution::FloatDistribution;
             use crate::param::ParamValue;
+            use crate::parameter::ParamId;
 
             let sampler = MultivariateTpeSampler::builder()
                 .gamma(0.25)
@@ -4197,6 +4281,9 @@ mod tests {
                 step: None,
             });
 
+            let x_id = ParamId::new();
+            let y_id = ParamId::new();
+
             // Create trials with objective values equal to x + y
             // So good trials have low x and y values
             let trial_data: Vec<CompletedTrial> = (0..20)
@@ -4206,25 +4293,25 @@ mod tests {
                     #[allow(clippy::cast_precision_loss)]
                     let y = (i as f64) / 2.0;
                     let mut params = HashMap::new();
-                    params.insert("x".to_string(), ParamValue::Float(x));
-                    params.insert("y".to_string(), ParamValue::Float(y));
+                    params.insert(x_id, ParamValue::Float(x));
+                    params.insert(y_id, ParamValue::Float(y));
                     let mut distributions = HashMap::new();
-                    distributions.insert("x".to_string(), float_dist.clone());
-                    distributions.insert("y".to_string(), float_dist.clone());
-                    CompletedTrial::new(i, params, distributions, x + y)
+                    distributions.insert(x_id, float_dist.clone());
+                    distributions.insert(y_id, float_dist.clone());
+                    CompletedTrial::new(i, params, distributions, HashMap::new(), x + y)
                 })
                 .collect();
 
             let mut search_space = HashMap::new();
-            search_space.insert("x".to_string(), float_dist.clone());
-            search_space.insert("y".to_string(), float_dist);
+            search_space.insert(x_id, float_dist.clone());
+            search_space.insert(y_id, float_dist);
 
             // Filter and split
             let filtered = sampler.filter_trials(&trial_data, &search_space);
             let (good, bad) = sampler.split_trials(&filtered);
 
             // Extract observations
-            let param_order = vec!["x".to_string(), "y".to_string()];
+            let param_order = vec![x_id, y_id];
             let good_obs = sampler.extract_observations(&good, &param_order);
             let bad_obs = sampler.extract_observations(&bad, &param_order);
 
@@ -4265,6 +4352,7 @@ mod tests {
         use super::*;
         use crate::distribution::{CategoricalDistribution, FloatDistribution, IntDistribution};
         use crate::param::ParamValue;
+        use crate::parameter::ParamId;
         use crate::sampler::CompletedTrial;
 
         fn float_dist(low: f64, high: f64) -> Distribution {
@@ -4291,16 +4379,16 @@ mod tests {
 
         fn create_trial(
             id: u64,
-            params: Vec<(&str, ParamValue, Distribution)>,
+            params: Vec<(ParamId, ParamValue, Distribution)>,
             value: f64,
         ) -> CompletedTrial {
             let mut param_map = HashMap::new();
             let mut dist_map = HashMap::new();
-            for (name, pv, dist) in params {
-                param_map.insert(name.to_string(), pv);
-                dist_map.insert(name.to_string(), dist);
+            for (param_id, pv, dist) in params {
+                param_map.insert(param_id, pv);
+                dist_map.insert(param_id, dist);
             }
-            CompletedTrial::new(id, param_map, dist_map, value)
+            CompletedTrial::new(id, param_map, dist_map, HashMap::new(), value)
         }
 
         #[test]
@@ -4311,17 +4399,19 @@ mod tests {
                 .build()
                 .unwrap();
 
+            let x_id = ParamId::new();
+            let y_id = ParamId::new();
             let mut search_space = HashMap::new();
-            search_space.insert("x".to_string(), float_dist(0.0, 1.0));
-            search_space.insert("y".to_string(), float_dist(0.0, 1.0));
+            search_space.insert(x_id, float_dist(0.0, 1.0));
+            search_space.insert(y_id, float_dist(0.0, 1.0));
 
             let history: Vec<CompletedTrial> = vec![];
 
             let result = sampler.sample_joint(&search_space, &history);
 
             assert_eq!(result.len(), 2);
-            assert!(result.contains_key("x"));
-            assert!(result.contains_key("y"));
+            assert!(result.contains_key(&x_id));
+            assert!(result.contains_key(&y_id));
         }
 
         #[test]
@@ -4332,8 +4422,9 @@ mod tests {
                 .build()
                 .unwrap();
 
+            let x_id = ParamId::new();
             let mut search_space = HashMap::new();
-            search_space.insert("x".to_string(), float_dist(0.0, 1.0));
+            search_space.insert(x_id, float_dist(0.0, 1.0));
 
             // Create 5 trials (less than n_startup_trials=10)
             let history: Vec<CompletedTrial> = (0..5)
@@ -4341,7 +4432,7 @@ mod tests {
                     create_trial(
                         i,
                         vec![(
-                            "x",
+                            x_id,
                             ParamValue::Float(i as f64 / 10.0),
                             float_dist(0.0, 1.0),
                         )],
@@ -4352,8 +4443,8 @@ mod tests {
 
             let result = sampler.sample_joint(&search_space, &history);
 
-            assert!(result.contains_key("x"));
-            if let Some(ParamValue::Float(v)) = result.get("x") {
+            assert!(result.contains_key(&x_id));
+            if let Some(ParamValue::Float(v)) = result.get(&x_id) {
                 assert!(*v >= 0.0 && *v <= 1.0);
             } else {
                 panic!("Expected Float value for x");
@@ -4369,9 +4460,11 @@ mod tests {
                 .build()
                 .unwrap();
 
+            let x_id = ParamId::new();
+            let y_id = ParamId::new();
             let mut search_space = HashMap::new();
-            search_space.insert("x".to_string(), float_dist(0.0, 10.0));
-            search_space.insert("y".to_string(), float_dist(0.0, 10.0));
+            search_space.insert(x_id, float_dist(0.0, 10.0));
+            search_space.insert(y_id, float_dist(0.0, 10.0));
 
             // Create 20 trials with good values near origin
             let history: Vec<CompletedTrial> = (0..20)
@@ -4381,8 +4474,8 @@ mod tests {
                     create_trial(
                         i,
                         vec![
-                            ("x", ParamValue::Float(x), float_dist(0.0, 10.0)),
-                            ("y", ParamValue::Float(y), float_dist(0.0, 10.0)),
+                            (x_id, ParamValue::Float(x), float_dist(0.0, 10.0)),
+                            (y_id, ParamValue::Float(y), float_dist(0.0, 10.0)),
                         ],
                         x + y, // Objective: lower is better
                     )
@@ -4392,14 +4485,14 @@ mod tests {
             let result = sampler.sample_joint(&search_space, &history);
 
             assert_eq!(result.len(), 2);
-            assert!(result.contains_key("x"));
-            assert!(result.contains_key("y"));
+            assert!(result.contains_key(&x_id));
+            assert!(result.contains_key(&y_id));
 
             // Values should be in the distribution bounds
-            if let Some(ParamValue::Float(x)) = result.get("x") {
+            if let Some(ParamValue::Float(x)) = result.get(&x_id) {
                 assert!(*x >= 0.0 && *x <= 10.0, "x={x} should be within [0, 10]");
             }
-            if let Some(ParamValue::Float(y)) = result.get("y") {
+            if let Some(ParamValue::Float(y)) = result.get(&y_id) {
                 assert!(*y >= 0.0 && *y <= 10.0, "y={y} should be within [0, 10]");
             }
         }
@@ -4413,8 +4506,9 @@ mod tests {
                 .build()
                 .unwrap();
 
+            let x_id = ParamId::new();
             let mut search_space = HashMap::new();
-            search_space.insert("x".to_string(), float_dist(0.0, 10.0));
+            search_space.insert(x_id, float_dist(0.0, 10.0));
 
             // Create trials: good ones near 0, bad ones near 10
             let mut history: Vec<CompletedTrial> = vec![];
@@ -4423,7 +4517,7 @@ mod tests {
                 history.push(create_trial(
                     i,
                     vec![(
-                        "x",
+                        x_id,
                         ParamValue::Float(i as f64 * 0.5),
                         float_dist(0.0, 10.0),
                     )],
@@ -4435,7 +4529,7 @@ mod tests {
                 history.push(create_trial(
                     i,
                     vec![(
-                        "x",
+                        x_id,
                         ParamValue::Float(5.0 + (i as f64 - 5.0) * 0.5),
                         float_dist(0.0, 10.0),
                     )],
@@ -4447,7 +4541,7 @@ mod tests {
             let mut low_count = 0;
             for _ in 0..20 {
                 let result = sampler.sample_joint(&search_space, &history);
-                if let Some(ParamValue::Float(x)) = result.get("x") {
+                if let Some(ParamValue::Float(x)) = result.get(&x_id) {
                     if *x < 5.0 {
                         low_count += 1;
                     }
@@ -4469,15 +4563,16 @@ mod tests {
                 .build()
                 .unwrap();
 
+            let n_layers_id = ParamId::new();
             let mut search_space = HashMap::new();
-            search_space.insert("n_layers".to_string(), int_dist(1, 10));
+            search_space.insert(n_layers_id, int_dist(1, 10));
 
             // Create history
             let history: Vec<CompletedTrial> = (0..10)
                 .map(|i| {
                     create_trial(
                         i,
-                        vec![("n_layers", ParamValue::Int(i as i64 + 1), int_dist(1, 10))],
+                        vec![(n_layers_id, ParamValue::Int(i as i64 + 1), int_dist(1, 10))],
                         i as f64,
                     )
                 })
@@ -4485,8 +4580,8 @@ mod tests {
 
             let result = sampler.sample_joint(&search_space, &history);
 
-            assert!(result.contains_key("n_layers"));
-            if let Some(ParamValue::Int(v)) = result.get("n_layers") {
+            assert!(result.contains_key(&n_layers_id));
+            if let Some(ParamValue::Int(v)) = result.get(&n_layers_id) {
                 assert!(*v >= 1 && *v <= 10, "n_layers={v} should be within [1, 10]");
             } else {
                 panic!("Expected Int value for n_layers");
@@ -4501,9 +4596,11 @@ mod tests {
                 .build()
                 .unwrap();
 
+            let lr_id = ParamId::new();
+            let n_layers_id = ParamId::new();
             let mut search_space = HashMap::new();
-            search_space.insert("lr".to_string(), float_dist(0.0, 1.0));
-            search_space.insert("n_layers".to_string(), int_dist(1, 5));
+            search_space.insert(lr_id, float_dist(0.0, 1.0));
+            search_space.insert(n_layers_id, int_dist(1, 5));
 
             // Create history with both params
             let history: Vec<CompletedTrial> = (0..15)
@@ -4512,12 +4609,12 @@ mod tests {
                         i,
                         vec![
                             (
-                                "lr",
+                                lr_id,
                                 ParamValue::Float(i as f64 / 15.0),
                                 float_dist(0.0, 1.0),
                             ),
                             (
-                                "n_layers",
+                                n_layers_id,
                                 ParamValue::Int((i % 5) as i64 + 1),
                                 int_dist(1, 5),
                             ),
@@ -4530,8 +4627,8 @@ mod tests {
             let result = sampler.sample_joint(&search_space, &history);
 
             assert_eq!(result.len(), 2);
-            assert!(result.contains_key("lr"));
-            assert!(result.contains_key("n_layers"));
+            assert!(result.contains_key(&lr_id));
+            assert!(result.contains_key(&n_layers_id));
         }
 
         #[test]
@@ -4543,9 +4640,11 @@ mod tests {
                 .build()
                 .unwrap();
 
+            let x_id = ParamId::new();
+            let optimizer_id = ParamId::new();
             let mut search_space = HashMap::new();
-            search_space.insert("x".to_string(), float_dist(0.0, 1.0));
-            search_space.insert("optimizer".to_string(), categorical_dist(3));
+            search_space.insert(x_id, float_dist(0.0, 1.0));
+            search_space.insert(optimizer_id, categorical_dist(3));
 
             let history: Vec<CompletedTrial> = (0..15)
                 .map(|i| {
@@ -4553,12 +4652,12 @@ mod tests {
                         i,
                         vec![
                             (
-                                "x",
+                                x_id,
                                 ParamValue::Float(i as f64 / 15.0),
                                 float_dist(0.0, 1.0),
                             ),
                             (
-                                "optimizer",
+                                optimizer_id,
                                 ParamValue::Categorical(i as usize % 3),
                                 categorical_dist(3),
                             ),
@@ -4571,10 +4670,10 @@ mod tests {
             let result = sampler.sample_joint(&search_space, &history);
 
             assert_eq!(result.len(), 2);
-            assert!(result.contains_key("x"));
-            assert!(result.contains_key("optimizer"));
+            assert!(result.contains_key(&x_id));
+            assert!(result.contains_key(&optimizer_id));
 
-            if let Some(ParamValue::Categorical(v)) = result.get("optimizer") {
+            if let Some(ParamValue::Categorical(v)) = result.get(&optimizer_id) {
                 assert!(*v < 3, "optimizer={v} should be in [0, 3)");
             } else {
                 panic!("Expected Categorical value for optimizer");
@@ -4583,10 +4682,12 @@ mod tests {
 
         #[test]
         fn test_sample_joint_reproducibility() {
+            let x_id = ParamId::new();
+            let y_id = ParamId::new();
             let search_space = {
                 let mut s = HashMap::new();
-                s.insert("x".to_string(), float_dist(0.0, 1.0));
-                s.insert("y".to_string(), float_dist(0.0, 1.0));
+                s.insert(x_id, float_dist(0.0, 1.0));
+                s.insert(y_id, float_dist(0.0, 1.0));
                 s
             };
 
@@ -4596,12 +4697,12 @@ mod tests {
                         i,
                         vec![
                             (
-                                "x",
+                                x_id,
                                 ParamValue::Float(i as f64 / 15.0),
                                 float_dist(0.0, 1.0),
                             ),
                             (
-                                "y",
+                                y_id,
                                 ParamValue::Float(i as f64 / 15.0),
                                 float_dist(0.0, 1.0),
                             ),
@@ -4638,9 +4739,10 @@ mod tests {
                 .build()
                 .unwrap();
 
+            let x_id = ParamId::new();
             let mut search_space = HashMap::new();
             // Narrow distribution
-            search_space.insert("x".to_string(), float_dist(0.0, 0.1));
+            search_space.insert(x_id, float_dist(0.0, 0.1));
 
             // Create trials at the edge
             let history: Vec<CompletedTrial> = (0..10)
@@ -4648,7 +4750,7 @@ mod tests {
                     create_trial(
                         i,
                         vec![(
-                            "x",
+                            x_id,
                             ParamValue::Float(i as f64 / 100.0),
                             float_dist(0.0, 0.1),
                         )],
@@ -4660,7 +4762,7 @@ mod tests {
             // Sample multiple times
             for _ in 0..10 {
                 let result = sampler.sample_joint(&search_space, &history);
-                if let Some(ParamValue::Float(x)) = result.get("x") {
+                if let Some(ParamValue::Float(x)) = result.get(&x_id) {
                     assert!(
                         *x >= 0.0 && *x <= 0.1,
                         "x={x} should be clamped to [0.0, 0.1]"
@@ -4677,20 +4779,22 @@ mod tests {
                 .build()
                 .unwrap();
 
+            let x_id = ParamId::new();
+            let y_id = ParamId::new();
             let mut search_space = HashMap::new();
-            search_space.insert("x".to_string(), float_dist(0.0, 1.0));
-            search_space.insert("y".to_string(), float_dist(0.0, 1.0));
+            search_space.insert(x_id, float_dist(0.0, 1.0));
+            search_space.insert(y_id, float_dist(0.0, 1.0));
 
             // Create trials with non-overlapping parameters
             let history = vec![
                 create_trial(
                     0,
-                    vec![("x", ParamValue::Float(0.5), float_dist(0.0, 1.0))],
+                    vec![(x_id, ParamValue::Float(0.5), float_dist(0.0, 1.0))],
                     1.0,
                 ),
                 create_trial(
                     1,
-                    vec![("y", ParamValue::Float(0.5), float_dist(0.0, 1.0))],
+                    vec![(y_id, ParamValue::Float(0.5), float_dist(0.0, 1.0))],
                     1.0,
                 ),
             ];
@@ -4699,8 +4803,8 @@ mod tests {
             let result = sampler.sample_joint(&search_space, &history);
 
             assert_eq!(result.len(), 2);
-            assert!(result.contains_key("x"));
-            assert!(result.contains_key("y"));
+            assert!(result.contains_key(&x_id));
+            assert!(result.contains_key(&y_id));
         }
 
         #[test]
@@ -4713,9 +4817,10 @@ mod tests {
                 .unwrap();
 
             // 5D search space
+            let dim_ids: Vec<ParamId> = (0..5).map(|_| ParamId::new()).collect();
             let mut search_space = HashMap::new();
-            for i in 0..5 {
-                search_space.insert(format!("x{i}"), float_dist(0.0, 10.0));
+            for &id in &dim_ids {
+                search_space.insert(id, float_dist(0.0, 10.0));
             }
 
             // Create history
@@ -4723,27 +4828,28 @@ mod tests {
                 .map(|trial_id| {
                     let mut param_map = HashMap::new();
                     let mut dist_map = HashMap::new();
-                    for dim in 0..5 {
-                        let name = format!("x{dim}");
+                    for (dim, &id) in dim_ids.iter().enumerate() {
                         let value = (trial_id as f64 + dim as f64) / 3.0;
-                        param_map.insert(name.clone(), ParamValue::Float(value));
-                        dist_map.insert(name, float_dist(0.0, 10.0));
+                        param_map.insert(id, ParamValue::Float(value));
+                        dist_map.insert(id, float_dist(0.0, 10.0));
                     }
-                    CompletedTrial::new(trial_id, param_map, dist_map, trial_id as f64)
+                    CompletedTrial::new(
+                        trial_id,
+                        param_map,
+                        dist_map,
+                        HashMap::new(),
+                        trial_id as f64,
+                    )
                 })
                 .collect();
 
             let result = sampler.sample_joint(&search_space, &history);
 
             assert_eq!(result.len(), 5);
-            for i in 0..5 {
-                let name = format!("x{i}");
-                assert!(result.contains_key(&name), "Missing parameter {name}");
-                if let Some(ParamValue::Float(v)) = result.get(&name) {
-                    assert!(
-                        *v >= 0.0 && *v <= 10.0,
-                        "{name}={v} should be within [0, 10]"
-                    );
+            for (i, &id) in dim_ids.iter().enumerate() {
+                assert!(result.contains_key(&id), "Missing parameter x{i}");
+                if let Some(ParamValue::Float(v)) = result.get(&id) {
+                    assert!(*v >= 0.0 && *v <= 10.0, "x{i}={v} should be within [0, 10]");
                 }
             }
         }
@@ -4866,62 +4972,67 @@ mod tests {
 
         #[test]
         fn test_extract_categorical_indices_basic() {
+            let cat_id = ParamId::new();
             let trials = [
                 create_trial(
                     0,
-                    vec![("cat", ParamValue::Categorical(1), categorical_dist(3))],
+                    vec![(cat_id, ParamValue::Categorical(1), categorical_dist(3))],
                     0.5,
                 ),
                 create_trial(
                     1,
-                    vec![("cat", ParamValue::Categorical(0), categorical_dist(3))],
+                    vec![(cat_id, ParamValue::Categorical(0), categorical_dist(3))],
                     1.0,
                 ),
                 create_trial(
                     2,
-                    vec![("cat", ParamValue::Categorical(2), categorical_dist(3))],
+                    vec![(cat_id, ParamValue::Categorical(2), categorical_dist(3))],
                     1.5,
                 ),
             ];
 
             let trial_refs: Vec<&CompletedTrial> = trials.iter().collect();
-            let indices = MultivariateTpeSampler::extract_categorical_indices(&trial_refs, "cat");
+            let indices = MultivariateTpeSampler::extract_categorical_indices(&trial_refs, cat_id);
 
             assert_eq!(indices, vec![1, 0, 2]);
         }
 
         #[test]
         fn test_extract_categorical_indices_missing_param() {
+            let cat_id = ParamId::new();
+            let other_id = ParamId::new();
             let trials = [
                 create_trial(
                     0,
-                    vec![("cat", ParamValue::Categorical(1), categorical_dist(3))],
+                    vec![(cat_id, ParamValue::Categorical(1), categorical_dist(3))],
                     0.5,
                 ),
                 create_trial(
                     1,
-                    vec![("other", ParamValue::Float(1.0), float_dist(0.0, 2.0))],
+                    vec![(other_id, ParamValue::Float(1.0), float_dist(0.0, 2.0))],
                     1.0,
                 ),
             ];
 
             let trial_refs: Vec<&CompletedTrial> = trials.iter().collect();
-            let indices = MultivariateTpeSampler::extract_categorical_indices(&trial_refs, "cat");
+            let indices = MultivariateTpeSampler::extract_categorical_indices(&trial_refs, cat_id);
 
-            // Only the trial with "cat" should be included
+            // Only the trial with cat should be included
             assert_eq!(indices, vec![1]);
         }
 
         #[test]
         fn test_extract_categorical_indices_wrong_type() {
+            let param_id = ParamId::new();
             let trials = [create_trial(
                 0,
-                vec![("param", ParamValue::Float(1.0), float_dist(0.0, 2.0))],
+                vec![(param_id, ParamValue::Float(1.0), float_dist(0.0, 2.0))],
                 0.5,
             )];
 
             let trial_refs: Vec<&CompletedTrial> = trials.iter().collect();
-            let indices = MultivariateTpeSampler::extract_categorical_indices(&trial_refs, "param");
+            let indices =
+                MultivariateTpeSampler::extract_categorical_indices(&trial_refs, param_id);
 
             // Should be empty since param is Float, not Categorical
             assert!(indices.is_empty());
@@ -4929,8 +5040,9 @@ mod tests {
 
         #[test]
         fn test_sample_joint_categorical_tpe_sampling() {
+            let cat_id = ParamId::new();
             let mut search_space = HashMap::new();
-            search_space.insert("cat".to_string(), categorical_dist(3));
+            search_space.insert(cat_id, categorical_dist(3));
 
             // Create history where category 0 is consistently good
             let mut history = Vec::new();
@@ -4938,7 +5050,7 @@ mod tests {
             for i in 0..5 {
                 history.push(create_trial(
                     i,
-                    vec![("cat", ParamValue::Categorical(0), categorical_dist(3))],
+                    vec![(cat_id, ParamValue::Categorical(0), categorical_dist(3))],
                     0.1,
                 ));
             }
@@ -4947,7 +5059,7 @@ mod tests {
                 let cat = if i.is_multiple_of(2) { 1 } else { 2 };
                 history.push(create_trial(
                     i,
-                    vec![("cat", ParamValue::Categorical(cat), categorical_dist(3))],
+                    vec![(cat_id, ParamValue::Categorical(cat), categorical_dist(3))],
                     10.0,
                 ));
             }
@@ -4961,7 +5073,7 @@ mod tests {
                     .build()
                     .unwrap();
                 let result = sampler_test.sample_joint(&search_space, &history);
-                if let Some(ParamValue::Categorical(idx)) = result.get("cat") {
+                if let Some(ParamValue::Categorical(idx)) = result.get(&cat_id) {
                     counts[*idx] += 1;
                 }
             }
@@ -4981,9 +5093,11 @@ mod tests {
                 .build()
                 .unwrap();
 
+            let x_id = ParamId::new();
+            let cat_id = ParamId::new();
             let mut search_space = HashMap::new();
-            search_space.insert("x".to_string(), float_dist(0.0, 1.0));
-            search_space.insert("cat".to_string(), categorical_dist(3));
+            search_space.insert(x_id, float_dist(0.0, 1.0));
+            search_space.insert(cat_id, categorical_dist(3));
 
             // Create history with both types
             let mut history = Vec::new();
@@ -4993,11 +5107,11 @@ mod tests {
                     i,
                     vec![
                         (
-                            "x",
+                            x_id,
                             ParamValue::Float(f64::from(i as u32) * 0.05),
                             float_dist(0.0, 1.0),
                         ),
-                        ("cat", ParamValue::Categorical(0), categorical_dist(3)),
+                        (cat_id, ParamValue::Categorical(0), categorical_dist(3)),
                     ],
                     f64::from(i as u32) * 0.1,
                 ));
@@ -5009,11 +5123,11 @@ mod tests {
                     i,
                     vec![
                         (
-                            "x",
+                            x_id,
                             ParamValue::Float(0.5 + f64::from(i as u32 - 5) * 0.05),
                             float_dist(0.0, 1.0),
                         ),
-                        ("cat", ParamValue::Categorical(cat), categorical_dist(3)),
+                        (cat_id, ParamValue::Categorical(cat), categorical_dist(3)),
                     ],
                     5.0 + f64::from(i as u32),
                 ));
@@ -5022,18 +5136,18 @@ mod tests {
             let result = sampler.sample_joint(&search_space, &history);
 
             // Both parameters should be present
-            assert!(result.contains_key("x"));
-            assert!(result.contains_key("cat"));
+            assert!(result.contains_key(&x_id));
+            assert!(result.contains_key(&cat_id));
 
             // x should be Float
             assert!(
-                matches!(result.get("x"), Some(ParamValue::Float(_))),
+                matches!(result.get(&x_id), Some(ParamValue::Float(_))),
                 "x should be Float"
             );
 
             // cat should be Categorical
             assert!(
-                matches!(result.get("cat"), Some(ParamValue::Categorical(_))),
+                matches!(result.get(&cat_id), Some(ParamValue::Categorical(_))),
                 "cat should be Categorical"
             );
         }
@@ -5046,9 +5160,11 @@ mod tests {
                 .build()
                 .unwrap();
 
+            let cat1_id = ParamId::new();
+            let cat2_id = ParamId::new();
             let mut search_space = HashMap::new();
-            search_space.insert("cat1".to_string(), categorical_dist(2));
-            search_space.insert("cat2".to_string(), categorical_dist(3));
+            search_space.insert(cat1_id, categorical_dist(2));
+            search_space.insert(cat2_id, categorical_dist(3));
 
             // Create history with only categorical parameters
             let mut history = Vec::new();
@@ -5059,8 +5175,8 @@ mod tests {
                 history.push(create_trial(
                     i,
                     vec![
-                        ("cat1", ParamValue::Categorical(cat1), categorical_dist(2)),
-                        ("cat2", ParamValue::Categorical(cat2), categorical_dist(3)),
+                        (cat1_id, ParamValue::Categorical(cat1), categorical_dist(2)),
+                        (cat2_id, ParamValue::Categorical(cat2), categorical_dist(3)),
                     ],
                     value,
                 ));
@@ -5070,11 +5186,11 @@ mod tests {
 
             assert_eq!(result.len(), 2);
             assert!(matches!(
-                result.get("cat1"),
+                result.get(&cat1_id),
                 Some(ParamValue::Categorical(_))
             ));
             assert!(matches!(
-                result.get("cat2"),
+                result.get(&cat2_id),
                 Some(ParamValue::Categorical(_))
             ));
         }
@@ -5086,6 +5202,7 @@ mod tests {
     #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
     mod sampler_trait_tests {
         use super::*;
+        use crate::parameter::ParamId;
 
         fn float_dist(low: f64, high: f64) -> Distribution {
             Distribution::Float(crate::distribution::FloatDistribution {
@@ -5111,16 +5228,16 @@ mod tests {
 
         fn create_trial(
             id: u64,
-            params: Vec<(&str, ParamValue, Distribution)>,
+            params: Vec<(ParamId, ParamValue, Distribution)>,
             value: f64,
         ) -> CompletedTrial {
             let mut param_map = HashMap::new();
             let mut dist_map = HashMap::new();
-            for (name, param, dist) in params {
-                param_map.insert(name.to_string(), param);
-                dist_map.insert(name.to_string(), dist);
+            for (param_id, param, dist) in params {
+                param_map.insert(param_id, param);
+                dist_map.insert(param_id, dist);
             }
-            CompletedTrial::new(id, param_map, dist_map, value)
+            CompletedTrial::new(id, param_map, dist_map, HashMap::new(), value)
         }
 
         #[test]
@@ -5156,12 +5273,13 @@ mod tests {
             let dist = float_dist(0.0, 1.0);
 
             // Create enough history to trigger TPE sampling
+            let x_id = ParamId::new();
             let history: Vec<CompletedTrial> = (0..10)
                 .map(|i| {
                     create_trial(
                         i,
                         vec![(
-                            "x",
+                            x_id,
                             ParamValue::Float(f64::from(i as u32) / 10.0),
                             float_dist(0.0, 1.0),
                         )],
@@ -5285,18 +5403,20 @@ mod tests {
             let dist_y = float_dist(0.0, 1.0);
 
             // Create history with two parameters
+            let x_id = ParamId::new();
+            let y_id = ParamId::new();
             let history: Vec<CompletedTrial> = (0..10)
                 .map(|i| {
                     create_trial(
                         i,
                         vec![
                             (
-                                "x",
+                                x_id,
                                 ParamValue::Float(f64::from(i as u32) / 10.0),
                                 float_dist(0.0, 1.0),
                             ),
                             (
-                                "y",
+                                y_id,
                                 ParamValue::Float(f64::from((10 - i) as u32) / 10.0),
                                 float_dist(0.0, 1.0),
                             ),
@@ -5322,9 +5442,11 @@ mod tests {
 
         #[test]
         fn test_find_matching_param_float() {
+            let x_id = ParamId::new();
+            let y_id = ParamId::new();
             let mut cached = HashMap::new();
-            cached.insert("x".to_string(), ParamValue::Float(0.5));
-            cached.insert("y".to_string(), ParamValue::Float(0.8));
+            cached.insert(x_id, ParamValue::Float(0.5));
+            cached.insert(y_id, ParamValue::Float(0.8));
 
             let dist = float_dist(0.0, 1.0);
             let result = MultivariateTpeSampler::find_matching_param(&dist, &cached);
@@ -5337,8 +5459,9 @@ mod tests {
 
         #[test]
         fn test_find_matching_param_int() {
+            let n_id = ParamId::new();
             let mut cached = HashMap::new();
-            cached.insert("n".to_string(), ParamValue::Int(5));
+            cached.insert(n_id, ParamValue::Int(5));
 
             let dist = int_dist(0, 10);
             let result = MultivariateTpeSampler::find_matching_param(&dist, &cached);
@@ -5351,8 +5474,9 @@ mod tests {
 
         #[test]
         fn test_find_matching_param_categorical() {
+            let choice_id = ParamId::new();
             let mut cached = HashMap::new();
-            cached.insert("choice".to_string(), ParamValue::Categorical(1));
+            cached.insert(choice_id, ParamValue::Categorical(1));
 
             let dist = categorical_dist(3);
             let result = MultivariateTpeSampler::find_matching_param(&dist, &cached);
@@ -5365,8 +5489,9 @@ mod tests {
 
         #[test]
         fn test_find_matching_param_no_match() {
+            let x_id = ParamId::new();
             let mut cached = HashMap::new();
-            cached.insert("x".to_string(), ParamValue::Float(0.5));
+            cached.insert(x_id, ParamValue::Float(0.5));
 
             // Looking for Int, but only Float in cache
             let dist = int_dist(0, 10);
@@ -5377,8 +5502,9 @@ mod tests {
 
         #[test]
         fn test_find_matching_param_out_of_bounds() {
+            let x_id = ParamId::new();
             let mut cached = HashMap::new();
-            cached.insert("x".to_string(), ParamValue::Float(5.0)); // Out of bounds
+            cached.insert(x_id, ParamValue::Float(5.0)); // Out of bounds
 
             let dist = float_dist(0.0, 1.0);
             let result = MultivariateTpeSampler::find_matching_param(&dist, &cached);
@@ -5388,20 +5514,22 @@ mod tests {
 
         #[test]
         fn test_build_search_space_from_history() {
+            let x_id = ParamId::new();
+            let y_id = ParamId::new();
             let history = vec![
                 create_trial(
                     0,
                     vec![
-                        ("x", ParamValue::Float(0.5), float_dist(0.0, 1.0)),
-                        ("y", ParamValue::Int(5), int_dist(0, 10)),
+                        (x_id, ParamValue::Float(0.5), float_dist(0.0, 1.0)),
+                        (y_id, ParamValue::Int(5), int_dist(0, 10)),
                     ],
                     1.0,
                 ),
                 create_trial(
                     1,
                     vec![
-                        ("x", ParamValue::Float(0.3), float_dist(0.0, 1.0)),
-                        ("y", ParamValue::Int(3), int_dist(0, 10)),
+                        (x_id, ParamValue::Float(0.3), float_dist(0.0, 1.0)),
+                        (y_id, ParamValue::Int(3), int_dist(0, 10)),
                     ],
                     2.0,
                 ),
@@ -5411,8 +5539,8 @@ mod tests {
             let search_space =
                 MultivariateTpeSampler::build_search_space_from_history(&current_dist, &history);
 
-            assert!(search_space.contains_key("x"));
-            assert!(search_space.contains_key("y"));
+            assert!(search_space.contains_key(&x_id));
+            assert!(search_space.contains_key(&y_id));
         }
 
         #[test]
@@ -5425,7 +5553,8 @@ mod tests {
 
             // Should have a placeholder for current distribution
             assert!(!search_space.is_empty());
-            assert!(search_space.contains_key("_current"));
+            // The placeholder uses ParamId::new(), so just check it has exactly 1 entry
+            assert_eq!(search_space.len(), 1);
         }
     }
 
@@ -5442,19 +5571,20 @@ mod tests {
     mod independent_fallback_tests {
         use super::*;
         use crate::distribution::{CategoricalDistribution, FloatDistribution, IntDistribution};
+        use crate::parameter::ParamId;
 
         fn create_trial(
             id: u64,
-            params: Vec<(&str, ParamValue, Distribution)>,
+            params: Vec<(ParamId, ParamValue, Distribution)>,
             value: f64,
         ) -> CompletedTrial {
             let mut param_map = HashMap::new();
             let mut dist_map = HashMap::new();
-            for (name, pv, dist) in params {
-                param_map.insert(name.to_string(), pv);
-                dist_map.insert(name.to_string(), dist);
+            for (param_id, pv, dist) in params {
+                param_map.insert(param_id, pv);
+                dist_map.insert(param_id, dist);
             }
-            CompletedTrial::new(id, param_map, dist_map, value)
+            CompletedTrial::new(id, param_map, dist_map, HashMap::new(), value)
         }
 
         fn float_dist(low: f64, high: f64) -> Distribution {
@@ -5481,29 +5611,32 @@ mod tests {
 
         #[test]
         fn test_fallback_on_empty_intersection() {
+            let x_id = ParamId::new();
+            let y_id = ParamId::new();
+            let z_id = ParamId::new();
             // Create trials with completely different parameters
             let history = vec![
                 create_trial(
                     0,
-                    vec![("x", ParamValue::Float(0.1), float_dist(0.0, 1.0))],
+                    vec![(x_id, ParamValue::Float(0.1), float_dist(0.0, 1.0))],
                     1.0,
                 ),
                 create_trial(
                     1,
-                    vec![("y", ParamValue::Float(0.2), float_dist(0.0, 1.0))],
+                    vec![(y_id, ParamValue::Float(0.2), float_dist(0.0, 1.0))],
                     2.0,
                 ),
                 create_trial(
                     2,
-                    vec![("z", ParamValue::Float(0.3), float_dist(0.0, 1.0))],
+                    vec![(z_id, ParamValue::Float(0.3), float_dist(0.0, 1.0))],
                     3.0,
                 ),
             ];
 
             // Request parameters that none of the trials have in common
             let mut search_space = HashMap::new();
-            search_space.insert("x".to_string(), float_dist(0.0, 1.0));
-            search_space.insert("y".to_string(), float_dist(0.0, 1.0));
+            search_space.insert(x_id, float_dist(0.0, 1.0));
+            search_space.insert(y_id, float_dist(0.0, 1.0));
 
             let sampler = MultivariateTpeSampler::builder()
                 .n_startup_trials(1)
@@ -5515,16 +5648,16 @@ mod tests {
             let result = sampler.sample_joint(&search_space, &history);
 
             // Should have all requested parameters
-            assert!(result.contains_key("x"));
-            assert!(result.contains_key("y"));
+            assert!(result.contains_key(&x_id));
+            assert!(result.contains_key(&y_id));
 
             // Values should be within bounds
-            if let ParamValue::Float(x) = result.get("x").unwrap() {
+            if let ParamValue::Float(x) = result.get(&x_id).unwrap() {
                 assert!((0.0..=1.0).contains(x));
             } else {
                 panic!("Expected Float for x");
             }
-            if let ParamValue::Float(y) = result.get("y").unwrap() {
+            if let ParamValue::Float(y) = result.get(&y_id).unwrap() {
                 assert!((0.0..=1.0).contains(y));
             } else {
                 panic!("Expected Float for y");
@@ -5533,29 +5666,32 @@ mod tests {
 
         #[test]
         fn test_fallback_fills_missing_params() {
+            let x_id = ParamId::new();
+            let y_id = ParamId::new();
+            let z_id = ParamId::new();
             // Trials have x and y, but we request x, y, and z
             let history = vec![
                 create_trial(
                     0,
                     vec![
-                        ("x", ParamValue::Float(0.2), float_dist(0.0, 1.0)),
-                        ("y", ParamValue::Float(0.3), float_dist(0.0, 1.0)),
+                        (x_id, ParamValue::Float(0.2), float_dist(0.0, 1.0)),
+                        (y_id, ParamValue::Float(0.3), float_dist(0.0, 1.0)),
                     ],
                     1.0,
                 ),
                 create_trial(
                     1,
                     vec![
-                        ("x", ParamValue::Float(0.4), float_dist(0.0, 1.0)),
-                        ("y", ParamValue::Float(0.5), float_dist(0.0, 1.0)),
+                        (x_id, ParamValue::Float(0.4), float_dist(0.0, 1.0)),
+                        (y_id, ParamValue::Float(0.5), float_dist(0.0, 1.0)),
                     ],
                     2.0,
                 ),
                 create_trial(
                     2,
                     vec![
-                        ("x", ParamValue::Float(0.6), float_dist(0.0, 1.0)),
-                        ("y", ParamValue::Float(0.7), float_dist(0.0, 1.0)),
+                        (x_id, ParamValue::Float(0.6), float_dist(0.0, 1.0)),
+                        (y_id, ParamValue::Float(0.7), float_dist(0.0, 1.0)),
                     ],
                     3.0,
                 ),
@@ -5563,9 +5699,9 @@ mod tests {
 
             // Request x, y (which are in intersection) and z (which is not)
             let mut search_space = HashMap::new();
-            search_space.insert("x".to_string(), float_dist(0.0, 1.0));
-            search_space.insert("y".to_string(), float_dist(0.0, 1.0));
-            search_space.insert("z".to_string(), float_dist(0.0, 1.0));
+            search_space.insert(x_id, float_dist(0.0, 1.0));
+            search_space.insert(y_id, float_dist(0.0, 1.0));
+            search_space.insert(z_id, float_dist(0.0, 1.0));
 
             let sampler = MultivariateTpeSampler::builder()
                 .n_startup_trials(1)
@@ -5576,16 +5712,16 @@ mod tests {
             let result = sampler.sample_joint(&search_space, &history);
 
             // Should have all three parameters
-            assert!(result.contains_key("x"));
-            assert!(result.contains_key("y"));
-            assert!(result.contains_key("z"));
+            assert!(result.contains_key(&x_id));
+            assert!(result.contains_key(&y_id));
+            assert!(result.contains_key(&z_id));
 
             // All values should be within bounds
-            for (name, value) in &result {
+            for value in result.values() {
                 if let ParamValue::Float(v) = value {
                     assert!(
                         (0.0..=1.0).contains(v),
-                        "Parameter {name} has value {v} out of bounds"
+                        "Parameter has value {v} out of bounds"
                     );
                 }
             }
@@ -5593,20 +5729,22 @@ mod tests {
 
         #[test]
         fn test_independent_tpe_sampling_with_int() {
+            let n_id = ParamId::new();
+            let m_id = ParamId::new();
             // Create trials with int parameters
             let history: Vec<CompletedTrial> = (0..20)
                 .map(|i| {
                     create_trial(
                         i,
-                        vec![("n", ParamValue::Int((i % 10) as i64), int_dist(0, 10))],
+                        vec![(n_id, ParamValue::Int((i % 10) as i64), int_dist(0, 10))],
                         (i as f64) * 0.1,
                     )
                 })
                 .collect();
 
             let mut search_space = HashMap::new();
-            search_space.insert("n".to_string(), int_dist(0, 10));
-            search_space.insert("m".to_string(), int_dist(0, 5)); // Not in history
+            search_space.insert(n_id, int_dist(0, 10));
+            search_space.insert(m_id, int_dist(0, 5)); // Not in history
 
             let sampler = MultivariateTpeSampler::builder()
                 .n_startup_trials(5)
@@ -5616,15 +5754,15 @@ mod tests {
 
             let result = sampler.sample_joint(&search_space, &history);
 
-            assert!(result.contains_key("n"));
-            assert!(result.contains_key("m"));
+            assert!(result.contains_key(&n_id));
+            assert!(result.contains_key(&m_id));
 
-            if let ParamValue::Int(n) = result.get("n").unwrap() {
+            if let ParamValue::Int(n) = result.get(&n_id).unwrap() {
                 assert!((0..=10).contains(n));
             } else {
                 panic!("Expected Int for n");
             }
-            if let ParamValue::Int(m) = result.get("m").unwrap() {
+            if let ParamValue::Int(m) = result.get(&m_id).unwrap() {
                 assert!((0..=5).contains(m));
             } else {
                 panic!("Expected Int for m");
@@ -5633,13 +5771,15 @@ mod tests {
 
         #[test]
         fn test_independent_tpe_sampling_with_categorical() {
+            let cat_id = ParamId::new();
+            let other_cat_id = ParamId::new();
             // Create trials with categorical parameters
             let history: Vec<CompletedTrial> = (0..20)
                 .map(|i| {
                     create_trial(
                         i,
                         vec![(
-                            "cat",
+                            cat_id,
                             ParamValue::Categorical(i as usize % 3),
                             categorical_dist(3),
                         )],
@@ -5649,8 +5789,8 @@ mod tests {
                 .collect();
 
             let mut search_space = HashMap::new();
-            search_space.insert("cat".to_string(), categorical_dist(3));
-            search_space.insert("other_cat".to_string(), categorical_dist(4)); // Not in history
+            search_space.insert(cat_id, categorical_dist(3));
+            search_space.insert(other_cat_id, categorical_dist(4)); // Not in history
 
             let sampler = MultivariateTpeSampler::builder()
                 .n_startup_trials(5)
@@ -5660,15 +5800,15 @@ mod tests {
 
             let result = sampler.sample_joint(&search_space, &history);
 
-            assert!(result.contains_key("cat"));
-            assert!(result.contains_key("other_cat"));
+            assert!(result.contains_key(&cat_id));
+            assert!(result.contains_key(&other_cat_id));
 
-            if let ParamValue::Categorical(cat) = result.get("cat").unwrap() {
+            if let ParamValue::Categorical(cat) = result.get(&cat_id).unwrap() {
                 assert!(*cat < 3);
             } else {
                 panic!("Expected Categorical for cat");
             }
-            if let ParamValue::Categorical(other) = result.get("other_cat").unwrap() {
+            if let ParamValue::Categorical(other) = result.get(&other_cat_id).unwrap() {
                 assert!(*other < 4);
             } else {
                 panic!("Expected Categorical for other_cat");
@@ -5677,6 +5817,7 @@ mod tests {
 
         #[test]
         fn test_sample_all_independent_uses_tpe() {
+            let x_id = ParamId::new();
             // Create trials with a clear pattern - good values clustered low
             let history: Vec<CompletedTrial> = (0..30)
                 .map(|i| {
@@ -5688,14 +5829,14 @@ mod tests {
                     let value = if i < 10 { 0.0 } else { 1.0 };
                     create_trial(
                         0,
-                        vec![("x", ParamValue::Float(x), float_dist(0.0, 1.0))],
+                        vec![(x_id, ParamValue::Float(x), float_dist(0.0, 1.0))],
                         value,
                     )
                 })
                 .collect();
 
             let mut search_space = HashMap::new();
-            search_space.insert("x".to_string(), float_dist(0.0, 1.0));
+            search_space.insert(x_id, float_dist(0.0, 1.0));
 
             let sampler = MultivariateTpeSampler::builder()
                 .n_startup_trials(5)
@@ -5709,7 +5850,7 @@ mod tests {
             let n_samples = 100;
             for _ in 0..n_samples {
                 let result = sampler.sample_all_independent(&search_space, &history);
-                if let Some(ParamValue::Float(x)) = result.get("x")
+                if let Some(ParamValue::Float(x)) = result.get(&x_id)
                     && *x < 0.5
                 {
                     low_count += 1;
@@ -5726,32 +5867,34 @@ mod tests {
 
         #[test]
         fn test_fallback_with_few_filtered_trials() {
+            let x_id = ParamId::new();
+            let y_id = ParamId::new();
             // Create trials where only 1 has all the required parameters
             let history = vec![
                 create_trial(
                     0,
                     vec![
-                        ("x", ParamValue::Float(0.1), float_dist(0.0, 1.0)),
-                        ("y", ParamValue::Float(0.2), float_dist(0.0, 1.0)),
+                        (x_id, ParamValue::Float(0.1), float_dist(0.0, 1.0)),
+                        (y_id, ParamValue::Float(0.2), float_dist(0.0, 1.0)),
                     ],
                     1.0,
                 ),
                 create_trial(
                     1,
-                    vec![("x", ParamValue::Float(0.3), float_dist(0.0, 1.0))],
+                    vec![(x_id, ParamValue::Float(0.3), float_dist(0.0, 1.0))],
                     2.0,
                 ),
                 create_trial(
                     2,
-                    vec![("x", ParamValue::Float(0.5), float_dist(0.0, 1.0))],
+                    vec![(x_id, ParamValue::Float(0.5), float_dist(0.0, 1.0))],
                     3.0,
                 ),
             ];
 
             // Request both x and y - only trial 0 has both
             let mut search_space = HashMap::new();
-            search_space.insert("x".to_string(), float_dist(0.0, 1.0));
-            search_space.insert("y".to_string(), float_dist(0.0, 1.0));
+            search_space.insert(x_id, float_dist(0.0, 1.0));
+            search_space.insert(y_id, float_dist(0.0, 1.0));
 
             let sampler = MultivariateTpeSampler::builder()
                 .n_startup_trials(1)
@@ -5762,17 +5905,18 @@ mod tests {
             // Should fall back since only 1 trial has both params (need at least 2)
             let result = sampler.sample_joint(&search_space, &history);
 
-            assert!(result.contains_key("x"));
-            assert!(result.contains_key("y"));
+            assert!(result.contains_key(&x_id));
+            assert!(result.contains_key(&y_id));
         }
 
         #[test]
         fn test_fill_remaining_uniform_fallback() {
+            let x_id = ParamId::new();
             // During startup phase, should use uniform sampling
             let history: Vec<CompletedTrial> = vec![]; // No history
 
             let mut search_space = HashMap::new();
-            search_space.insert("x".to_string(), float_dist(0.0, 1.0));
+            search_space.insert(x_id, float_dist(0.0, 1.0));
 
             let sampler = MultivariateTpeSampler::builder()
                 .n_startup_trials(10) // High startup means we'll use random
@@ -5783,14 +5927,18 @@ mod tests {
             // With no history and high startup threshold, should sample uniformly
             let result = sampler.sample_joint(&search_space, &history);
 
-            assert!(result.contains_key("x"));
-            if let ParamValue::Float(x) = result.get("x").unwrap() {
+            assert!(result.contains_key(&x_id));
+            if let ParamValue::Float(x) = result.get(&x_id).unwrap() {
                 assert!((0.0..=1.0).contains(x));
             }
         }
 
         #[test]
         fn test_mixed_params_intersection_and_not() {
+            let x_id = ParamId::new();
+            let y_id = ParamId::new();
+            let z_id = ParamId::new();
+            let cat_id = ParamId::new();
             // Create history with x,y - both will be in intersection
             let history: Vec<CompletedTrial> = (0..15)
                 .map(|i| {
@@ -5798,11 +5946,11 @@ mod tests {
                         i,
                         vec![
                             (
-                                "x",
+                                x_id,
                                 ParamValue::Float((i as f64) * 0.05),
                                 float_dist(0.0, 1.0),
                             ),
-                            ("y", ParamValue::Int(i as i64 % 5), int_dist(0, 10)),
+                            (y_id, ParamValue::Int(i as i64 % 5), int_dist(0, 10)),
                         ],
                         (i as f64) * 0.1,
                     )
@@ -5811,10 +5959,10 @@ mod tests {
 
             // Request x, y (in intersection) and z, cat (not in intersection)
             let mut search_space = HashMap::new();
-            search_space.insert("x".to_string(), float_dist(0.0, 1.0));
-            search_space.insert("y".to_string(), int_dist(0, 10));
-            search_space.insert("z".to_string(), float_dist(-1.0, 1.0));
-            search_space.insert("cat".to_string(), categorical_dist(5));
+            search_space.insert(x_id, float_dist(0.0, 1.0));
+            search_space.insert(y_id, int_dist(0, 10));
+            search_space.insert(z_id, float_dist(-1.0, 1.0));
+            search_space.insert(cat_id, categorical_dist(5));
 
             let sampler = MultivariateTpeSampler::builder()
                 .n_startup_trials(5)
@@ -5825,22 +5973,22 @@ mod tests {
             let result = sampler.sample_joint(&search_space, &history);
 
             // All parameters should be present
-            assert!(result.contains_key("x"));
-            assert!(result.contains_key("y"));
-            assert!(result.contains_key("z"));
-            assert!(result.contains_key("cat"));
+            assert!(result.contains_key(&x_id));
+            assert!(result.contains_key(&y_id));
+            assert!(result.contains_key(&z_id));
+            assert!(result.contains_key(&cat_id));
 
             // Validate bounds
-            if let ParamValue::Float(x) = result.get("x").unwrap() {
+            if let ParamValue::Float(x) = result.get(&x_id).unwrap() {
                 assert!((0.0..=1.0).contains(x));
             }
-            if let ParamValue::Int(y) = result.get("y").unwrap() {
+            if let ParamValue::Int(y) = result.get(&y_id).unwrap() {
                 assert!((0..=10).contains(y));
             }
-            if let ParamValue::Float(z) = result.get("z").unwrap() {
+            if let ParamValue::Float(z) = result.get(&z_id).unwrap() {
                 assert!((-1.0..=1.0).contains(z));
             }
-            if let ParamValue::Categorical(cat) = result.get("cat").unwrap() {
+            if let ParamValue::Categorical(cat) = result.get(&cat_id).unwrap() {
                 assert!(*cat < 5);
             }
         }
@@ -5850,19 +5998,20 @@ mod tests {
     mod group_sampling_tests {
         use super::*;
         use crate::distribution::{CategoricalDistribution, FloatDistribution, IntDistribution};
+        use crate::parameter::ParamId;
 
         fn create_trial(
             id: u64,
-            params: Vec<(&str, ParamValue, Distribution)>,
+            params: Vec<(ParamId, ParamValue, Distribution)>,
             value: f64,
         ) -> CompletedTrial {
             let mut param_map = HashMap::new();
             let mut dist_map = HashMap::new();
-            for (name, pv, dist) in params {
-                param_map.insert(name.to_string(), pv);
-                dist_map.insert(name.to_string(), dist);
+            for (param_id, pv, dist) in params {
+                param_map.insert(param_id, pv);
+                dist_map.insert(param_id, dist);
             }
-            CompletedTrial::new(id, param_map, dist_map, value)
+            CompletedTrial::new(id, param_map, dist_map, HashMap::new(), value)
         }
 
         #[test]
@@ -5882,6 +6031,9 @@ mod tests {
                 step: None,
             });
 
+            let x_id = ParamId::new();
+            let y_id = ParamId::new();
+
             // Create history with all params together
             let history: Vec<CompletedTrial> = (0..10)
                 .map(|i| {
@@ -5890,8 +6042,8 @@ mod tests {
                     create_trial(
                         i,
                         vec![
-                            ("x", ParamValue::Float(v), dist.clone()),
-                            ("y", ParamValue::Float(v + 0.05), dist.clone()),
+                            (x_id, ParamValue::Float(v), dist.clone()),
+                            (y_id, ParamValue::Float(v + 0.05), dist.clone()),
                         ],
                         v * v,
                     )
@@ -5899,13 +6051,13 @@ mod tests {
                 .collect();
 
             let mut search_space = HashMap::new();
-            search_space.insert("x".to_string(), dist.clone());
-            search_space.insert("y".to_string(), dist);
+            search_space.insert(x_id, dist.clone());
+            search_space.insert(y_id, dist);
 
             let result = sampler.sample_joint(&search_space, &history);
 
-            assert!(result.contains_key("x"));
-            assert!(result.contains_key("y"));
+            assert!(result.contains_key(&x_id));
+            assert!(result.contains_key(&y_id));
             assert_eq!(result.len(), 2);
         }
 
@@ -5926,6 +6078,11 @@ mod tests {
                 step: None,
             });
 
+            let x_id = ParamId::new();
+            let y_id = ParamId::new();
+            let a_id = ParamId::new();
+            let b_id = ParamId::new();
+
             // Create history with two independent groups:
             // Group 1: x, y appear together
             // Group 2: a, b appear together
@@ -5937,8 +6094,8 @@ mod tests {
                 history.push(create_trial(
                     i,
                     vec![
-                        ("x", ParamValue::Float(v), dist.clone()),
-                        ("y", ParamValue::Float(v + 0.05), dist.clone()),
+                        (x_id, ParamValue::Float(v), dist.clone()),
+                        (y_id, ParamValue::Float(v + 0.05), dist.clone()),
                     ],
                     v * v,
                 ));
@@ -5949,8 +6106,8 @@ mod tests {
                 history.push(create_trial(
                     i,
                     vec![
-                        ("a", ParamValue::Float(v), dist.clone()),
-                        ("b", ParamValue::Float(v + 0.1), dist.clone()),
+                        (a_id, ParamValue::Float(v), dist.clone()),
+                        (b_id, ParamValue::Float(v + 0.1), dist.clone()),
                     ],
                     v + 0.5,
                 ));
@@ -5958,18 +6115,18 @@ mod tests {
 
             // Search space contains params from both groups
             let mut search_space = HashMap::new();
-            search_space.insert("x".to_string(), dist.clone());
-            search_space.insert("y".to_string(), dist.clone());
-            search_space.insert("a".to_string(), dist.clone());
-            search_space.insert("b".to_string(), dist);
+            search_space.insert(x_id, dist.clone());
+            search_space.insert(y_id, dist.clone());
+            search_space.insert(a_id, dist.clone());
+            search_space.insert(b_id, dist);
 
             let result = sampler.sample_joint(&search_space, &history);
 
             // All params should be sampled
-            assert!(result.contains_key("x"));
-            assert!(result.contains_key("y"));
-            assert!(result.contains_key("a"));
-            assert!(result.contains_key("b"));
+            assert!(result.contains_key(&x_id));
+            assert!(result.contains_key(&y_id));
+            assert!(result.contains_key(&a_id));
+            assert!(result.contains_key(&b_id));
             assert_eq!(result.len(), 4);
 
             // Values should be within bounds
@@ -6004,6 +6161,10 @@ mod tests {
                 step: None,
             });
 
+            let x_id = ParamId::new();
+            let y_id = ParamId::new();
+            let z_id = ParamId::new();
+
             // All params appear together in all trials
             let history: Vec<CompletedTrial> = (0..10)
                 .map(|i| {
@@ -6012,9 +6173,9 @@ mod tests {
                     create_trial(
                         i,
                         vec![
-                            ("x", ParamValue::Float(v), dist.clone()),
-                            ("y", ParamValue::Float(v + 0.05), dist.clone()),
-                            ("z", ParamValue::Float(v + 0.1), dist.clone()),
+                            (x_id, ParamValue::Float(v), dist.clone()),
+                            (y_id, ParamValue::Float(v + 0.05), dist.clone()),
+                            (z_id, ParamValue::Float(v + 0.1), dist.clone()),
                         ],
                         v * v,
                     )
@@ -6022,9 +6183,9 @@ mod tests {
                 .collect();
 
             let mut search_space = HashMap::new();
-            search_space.insert("x".to_string(), dist.clone());
-            search_space.insert("y".to_string(), dist.clone());
-            search_space.insert("z".to_string(), dist);
+            search_space.insert(x_id, dist.clone());
+            search_space.insert(y_id, dist.clone());
+            search_space.insert(z_id, dist);
 
             let result_grouped = sampler_grouped.sample_joint(&search_space, &history);
             let result_ungrouped = sampler_ungrouped.sample_joint(&search_space, &history);
@@ -6060,27 +6221,31 @@ mod tests {
                 step: None,
             });
 
+            let x_id = ParamId::new();
+            let y_id = ParamId::new();
+            let z_id = ParamId::new();
+
             // Each param appears alone (forms its own isolated group)
             let history = vec![
-                create_trial(0, vec![("x", ParamValue::Float(0.3), dist.clone())], 1.0),
-                create_trial(1, vec![("y", ParamValue::Float(0.5), dist.clone())], 0.5),
-                create_trial(2, vec![("z", ParamValue::Float(0.7), dist.clone())], 0.8),
-                create_trial(3, vec![("x", ParamValue::Float(0.2), dist.clone())], 1.2),
-                create_trial(4, vec![("y", ParamValue::Float(0.6), dist.clone())], 0.4),
-                create_trial(5, vec![("z", ParamValue::Float(0.8), dist.clone())], 0.7),
+                create_trial(0, vec![(x_id, ParamValue::Float(0.3), dist.clone())], 1.0),
+                create_trial(1, vec![(y_id, ParamValue::Float(0.5), dist.clone())], 0.5),
+                create_trial(2, vec![(z_id, ParamValue::Float(0.7), dist.clone())], 0.8),
+                create_trial(3, vec![(x_id, ParamValue::Float(0.2), dist.clone())], 1.2),
+                create_trial(4, vec![(y_id, ParamValue::Float(0.6), dist.clone())], 0.4),
+                create_trial(5, vec![(z_id, ParamValue::Float(0.8), dist.clone())], 0.7),
             ];
 
             let mut search_space = HashMap::new();
-            search_space.insert("x".to_string(), dist.clone());
-            search_space.insert("y".to_string(), dist.clone());
-            search_space.insert("z".to_string(), dist);
+            search_space.insert(x_id, dist.clone());
+            search_space.insert(y_id, dist.clone());
+            search_space.insert(z_id, dist);
 
             let result = sampler.sample_joint(&search_space, &history);
 
             // All params should be sampled
-            assert!(result.contains_key("x"));
-            assert!(result.contains_key("y"));
-            assert!(result.contains_key("z"));
+            assert!(result.contains_key(&x_id));
+            assert!(result.contains_key(&y_id));
+            assert!(result.contains_key(&z_id));
 
             // Values should be within bounds
             for value in result.values() {
@@ -6107,24 +6272,27 @@ mod tests {
                 step: None,
             });
 
+            let x_id = ParamId::new();
+            let y_id = ParamId::new();
+
             // Only 5 trials (less than n_startup_trials=10)
             let history: Vec<CompletedTrial> = (0..5)
                 .map(|i| {
                     #[allow(clippy::cast_precision_loss)]
                     let v = (i as f64) * 0.1;
-                    create_trial(i, vec![("x", ParamValue::Float(v), dist.clone())], v * v)
+                    create_trial(i, vec![(x_id, ParamValue::Float(v), dist.clone())], v * v)
                 })
                 .collect();
 
             let mut search_space = HashMap::new();
-            search_space.insert("x".to_string(), dist.clone());
-            search_space.insert("y".to_string(), dist);
+            search_space.insert(x_id, dist.clone());
+            search_space.insert(y_id, dist);
 
             let result = sampler.sample_joint(&search_space, &history);
 
             // Should sample uniformly for all params
-            assert!(result.contains_key("x"));
-            assert!(result.contains_key("y"));
+            assert!(result.contains_key(&x_id));
+            assert!(result.contains_key(&y_id));
         }
 
         #[test]
@@ -6151,6 +6319,10 @@ mod tests {
             });
             let dist_cat = Distribution::Categorical(CategoricalDistribution { n_choices: 3 });
 
+            let lr_id = ParamId::new();
+            let layers_id = ParamId::new();
+            let opt_id = ParamId::new();
+
             // Group 1: float, int co-occur
             // Group 2: categorical alone
             let mut history = Vec::new();
@@ -6162,8 +6334,8 @@ mod tests {
                 history.push(create_trial(
                     i,
                     vec![
-                        ("lr", ParamValue::Float(v), dist_float.clone()),
-                        ("layers", ParamValue::Int(int_v), dist_int.clone()),
+                        (lr_id, ParamValue::Float(v), dist_float.clone()),
+                        (layers_id, ParamValue::Int(int_v), dist_int.clone()),
                     ],
                     v * v,
                 ));
@@ -6172,7 +6344,7 @@ mod tests {
                 history.push(create_trial(
                     i,
                     vec![(
-                        "opt",
+                        opt_id,
                         ParamValue::Categorical((i % 3) as usize),
                         dist_cat.clone(),
                     )],
@@ -6181,21 +6353,21 @@ mod tests {
             }
 
             let mut search_space = HashMap::new();
-            search_space.insert("lr".to_string(), dist_float);
-            search_space.insert("layers".to_string(), dist_int);
-            search_space.insert("opt".to_string(), dist_cat);
+            search_space.insert(lr_id, dist_float);
+            search_space.insert(layers_id, dist_int);
+            search_space.insert(opt_id, dist_cat);
 
             let result = sampler.sample_joint(&search_space, &history);
 
-            assert!(result.contains_key("lr"));
-            assert!(result.contains_key("layers"));
-            assert!(result.contains_key("opt"));
+            assert!(result.contains_key(&lr_id));
+            assert!(result.contains_key(&layers_id));
+            assert!(result.contains_key(&opt_id));
 
             // Check types
-            assert!(matches!(result.get("lr"), Some(ParamValue::Float(_))));
-            assert!(matches!(result.get("layers"), Some(ParamValue::Int(_))));
+            assert!(matches!(result.get(&lr_id), Some(ParamValue::Float(_))));
+            assert!(matches!(result.get(&layers_id), Some(ParamValue::Int(_))));
             assert!(matches!(
-                result.get("opt"),
+                result.get(&opt_id),
                 Some(ParamValue::Categorical(_))
             ));
         }
@@ -6217,16 +6389,19 @@ mod tests {
                 step: None,
             });
 
+            let x_id = ParamId::new();
+            let y_id = ParamId::new();
+
             let history: Vec<CompletedTrial> = vec![];
 
             let mut search_space = HashMap::new();
-            search_space.insert("x".to_string(), dist.clone());
-            search_space.insert("y".to_string(), dist);
+            search_space.insert(x_id, dist.clone());
+            search_space.insert(y_id, dist);
 
             let result = sampler.sample_joint(&search_space, &history);
 
-            assert!(result.contains_key("x"));
-            assert!(result.contains_key("y"));
+            assert!(result.contains_key(&x_id));
+            assert!(result.contains_key(&y_id));
         }
 
         #[test]
@@ -6247,6 +6422,9 @@ mod tests {
                 step: None,
             });
 
+            let x_id = ParamId::new();
+            let y_id = ParamId::new();
+
             // Two non-overlapping groups
             let mut history = Vec::new();
             for i in 0..5 {
@@ -6254,7 +6432,7 @@ mod tests {
                 let v = (i as f64) * 0.1;
                 history.push(create_trial(
                     i,
-                    vec![("x", ParamValue::Float(v), dist.clone())],
+                    vec![(x_id, ParamValue::Float(v), dist.clone())],
                     v,
                 ));
             }
@@ -6263,20 +6441,20 @@ mod tests {
                 let v = (i as f64) * 0.05;
                 history.push(create_trial(
                     i,
-                    vec![("y", ParamValue::Float(v), dist.clone())],
+                    vec![(y_id, ParamValue::Float(v), dist.clone())],
                     v,
                 ));
             }
 
             let mut search_space = HashMap::new();
-            search_space.insert("x".to_string(), dist.clone());
-            search_space.insert("y".to_string(), dist);
+            search_space.insert(x_id, dist.clone());
+            search_space.insert(y_id, dist);
 
             let result = sampler.sample_joint(&search_space, &history);
 
             // Should still produce valid results via fallback
-            assert!(result.contains_key("x"));
-            assert!(result.contains_key("y"));
+            assert!(result.contains_key(&x_id));
+            assert!(result.contains_key(&y_id));
         }
 
         #[test]
@@ -6289,6 +6467,9 @@ mod tests {
                 step: None,
             });
 
+            let x_id = ParamId::new();
+            let y_id = ParamId::new();
+
             let history: Vec<CompletedTrial> = (0..10)
                 .map(|i| {
                     #[allow(clippy::cast_precision_loss)]
@@ -6296,8 +6477,8 @@ mod tests {
                     create_trial(
                         i,
                         vec![
-                            ("x", ParamValue::Float(v), dist.clone()),
-                            ("y", ParamValue::Float(v + 0.05), dist.clone()),
+                            (x_id, ParamValue::Float(v), dist.clone()),
+                            (y_id, ParamValue::Float(v + 0.05), dist.clone()),
                         ],
                         v * v,
                     )
@@ -6305,8 +6486,8 @@ mod tests {
                 .collect();
 
             let mut search_space = HashMap::new();
-            search_space.insert("x".to_string(), dist.clone());
-            search_space.insert("y".to_string(), dist);
+            search_space.insert(x_id, dist.clone());
+            search_space.insert(y_id, dist);
 
             // Same seed should produce same results
             let sampler1 = MultivariateTpeSamplerBuilder::new()
@@ -6345,26 +6526,29 @@ mod tests {
                 step: None,
             });
 
+            let x_id = ParamId::new();
+            let y_id = ParamId::new();
+
             // History only has x, but search space has x and y
             let history: Vec<CompletedTrial> = (0..10)
                 .map(|i| {
                     let v = (i as f64) * 0.1;
-                    create_trial(i, vec![("x", ParamValue::Float(v), dist.clone())], v * v)
+                    create_trial(i, vec![(x_id, ParamValue::Float(v), dist.clone())], v * v)
                 })
                 .collect();
 
             let mut search_space = HashMap::new();
-            search_space.insert("x".to_string(), dist.clone());
-            search_space.insert("y".to_string(), dist); // Not in history
+            search_space.insert(x_id, dist.clone());
+            search_space.insert(y_id, dist); // Not in history
 
             let result = sampler.sample_joint(&search_space, &history);
 
             // Both should be sampled
-            assert!(result.contains_key("x"));
-            assert!(result.contains_key("y"));
+            assert!(result.contains_key(&x_id));
+            assert!(result.contains_key(&y_id));
 
             // y should be sampled uniformly (not in any group)
-            if let ParamValue::Float(v) = result.get("y").unwrap() {
+            if let ParamValue::Float(v) = result.get(&y_id).unwrap() {
                 assert!((0.0..=1.0).contains(v));
             }
         }

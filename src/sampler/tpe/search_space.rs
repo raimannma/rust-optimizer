@@ -11,6 +11,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::distribution::Distribution;
+use crate::parameter::ParamId;
 use crate::sampler::CompletedTrial;
 
 /// Computes the intersection of search spaces across completed trials.
@@ -87,34 +88,30 @@ impl IntersectionSearchSpace {
     /// - For dynamic search spaces where not all parameters are sampled in every trial,
     ///   this helps identify the "stable" set of parameters that can be modeled jointly.
     #[must_use]
-    pub fn calculate(trials: &[CompletedTrial]) -> HashMap<String, Distribution> {
+    pub fn calculate(trials: &[CompletedTrial]) -> HashMap<ParamId, Distribution> {
         if trials.is_empty() {
             return HashMap::new();
         }
 
-        // Get parameter names from the first trial as the initial candidate set
+        // Get parameter ids from the first trial as the initial candidate set
         let first_trial = &trials[0];
-        let mut candidate_params: HashSet<&str> = first_trial
-            .distributions
-            .keys()
-            .map(String::as_str)
-            .collect();
+        let mut candidate_params: HashSet<ParamId> =
+            first_trial.distributions.keys().copied().collect();
 
         // Intersect with parameter sets from all other trials
         for trial in trials.iter().skip(1) {
-            let trial_params: HashSet<&str> =
-                trial.distributions.keys().map(String::as_str).collect();
+            let trial_params: HashSet<ParamId> = trial.distributions.keys().copied().collect();
             candidate_params.retain(|param| trial_params.contains(param));
         }
 
         // Build the result map using distributions from the first trial
         // that contains each parameter
         let mut result = HashMap::new();
-        for param_name in candidate_params {
+        for param_id in candidate_params {
             // Find the first trial that has this parameter and use its distribution
             for trial in trials {
-                if let Some(dist) = trial.distributions.get(param_name) {
-                    result.insert(param_name.to_string(), dist.clone());
+                if let Some(dist) = trial.distributions.get(&param_id) {
+                    result.insert(param_id, dist.clone());
                     break;
                 }
             }
@@ -193,7 +190,7 @@ impl GroupDecomposedSearchSpace {
     ///
     /// # Returns
     ///
-    /// A `Vec<HashSet<String>>` where each `HashSet` represents an independent group
+    /// A `Vec<HashSet<ParamId>>` where each `HashSet` represents an independent group
     /// of parameters that co-occur. Parameters within the same group have appeared
     /// together in at least one trial (directly or transitively). Parameters in
     /// different groups have never appeared in the same trial.
@@ -212,16 +209,16 @@ impl GroupDecomposedSearchSpace {
     /// - This is useful for `MultivariateTpeSampler` when `group=true` to sample
     ///   independent parameter groups separately.
     #[must_use]
-    pub fn calculate(trials: &[CompletedTrial]) -> Vec<HashSet<String>> {
+    pub fn calculate(trials: &[CompletedTrial]) -> Vec<HashSet<ParamId>> {
         if trials.is_empty() {
             return Vec::new();
         }
 
-        // Collect all unique parameter names
-        let mut all_params: HashSet<String> = HashSet::new();
+        // Collect all unique parameter ids
+        let mut all_params: HashSet<ParamId> = HashSet::new();
         for trial in trials {
-            for param_name in trial.distributions.keys() {
-                all_params.insert(param_name.clone());
+            for &param_id in trial.distributions.keys() {
+                all_params.insert(param_id);
             }
         }
 
@@ -231,51 +228,51 @@ impl GroupDecomposedSearchSpace {
 
         // Build adjacency list for co-occurrence graph
         // Two parameters are adjacent if they appear in the same trial
-        let mut adjacency: HashMap<String, HashSet<String>> = HashMap::new();
-        for param in &all_params {
-            adjacency.insert(param.clone(), HashSet::new());
+        let mut adjacency: HashMap<ParamId, HashSet<ParamId>> = HashMap::new();
+        for &param in &all_params {
+            adjacency.insert(param, HashSet::new());
         }
 
         for trial in trials {
-            let trial_params: Vec<&String> = trial.distributions.keys().collect();
+            let trial_params: Vec<ParamId> = trial.distributions.keys().copied().collect();
             // Connect all pairs of parameters in this trial
-            for (i, param1) in trial_params.iter().enumerate() {
-                for param2 in trial_params.iter().skip(i + 1) {
+            for (i, &param1) in trial_params.iter().enumerate() {
+                for &param2 in trial_params.iter().skip(i + 1) {
                     adjacency
-                        .get_mut(*param1)
+                        .get_mut(&param1)
                         .expect("param should exist in adjacency map")
-                        .insert((*param2).clone());
+                        .insert(param2);
                     adjacency
-                        .get_mut(*param2)
+                        .get_mut(&param2)
                         .expect("param should exist in adjacency map")
-                        .insert((*param1).clone());
+                        .insert(param1);
                 }
             }
         }
 
         // Find connected components using BFS
-        let mut visited: HashSet<String> = HashSet::new();
-        let mut groups: Vec<HashSet<String>> = Vec::new();
+        let mut visited: HashSet<ParamId> = HashSet::new();
+        let mut groups: Vec<HashSet<ParamId>> = Vec::new();
 
-        for param in &all_params {
-            if visited.contains(param) {
+        for &param in &all_params {
+            if visited.contains(&param) {
                 continue;
             }
 
             // BFS to find all parameters in this component
-            let mut component: HashSet<String> = HashSet::new();
-            let mut queue: VecDeque<String> = VecDeque::new();
-            queue.push_back(param.clone());
-            visited.insert(param.clone());
+            let mut component: HashSet<ParamId> = HashSet::new();
+            let mut queue: VecDeque<ParamId> = VecDeque::new();
+            queue.push_back(param);
+            visited.insert(param);
 
             while let Some(current) = queue.pop_front() {
-                component.insert(current.clone());
+                component.insert(current);
 
                 if let Some(neighbors) = adjacency.get(&current) {
-                    for neighbor in neighbors {
-                        if !visited.contains(neighbor) {
-                            visited.insert(neighbor.clone());
-                            queue.push_back(neighbor.clone());
+                    for &neighbor in neighbors {
+                        if !visited.contains(&neighbor) {
+                            visited.insert(neighbor);
+                            queue.push_back(neighbor);
                         }
                     }
                 }
@@ -293,19 +290,20 @@ mod tests {
     use super::*;
     use crate::distribution::{CategoricalDistribution, FloatDistribution, IntDistribution};
     use crate::param::ParamValue;
+    use crate::parameter::ParamId;
 
     fn create_trial(
         id: u64,
-        params: Vec<(&str, ParamValue, Distribution)>,
+        params: Vec<(ParamId, ParamValue, Distribution)>,
         value: f64,
     ) -> CompletedTrial {
         let mut param_map = HashMap::new();
         let mut dist_map = HashMap::new();
-        for (name, pv, dist) in params {
-            param_map.insert(name.to_string(), pv);
-            dist_map.insert(name.to_string(), dist);
+        for (param_id, pv, dist) in params {
+            param_map.insert(param_id, pv);
+            dist_map.insert(param_id, dist);
         }
-        CompletedTrial::new(id, param_map, dist_map, value)
+        CompletedTrial::new(id, param_map, dist_map, HashMap::new(), value)
     }
 
     #[test]
@@ -317,6 +315,8 @@ mod tests {
 
     #[test]
     fn test_single_trial() {
+        let x_id = ParamId::new();
+        let y_id = ParamId::new();
         let dist_x = Distribution::Float(FloatDistribution {
             low: 0.0,
             high: 1.0,
@@ -333,22 +333,24 @@ mod tests {
         let trial = create_trial(
             0,
             vec![
-                ("x", ParamValue::Float(0.5), dist_x.clone()),
-                ("y", ParamValue::Int(5), dist_y.clone()),
+                (x_id, ParamValue::Float(0.5), dist_x.clone()),
+                (y_id, ParamValue::Int(5), dist_y.clone()),
             ],
             1.0,
         );
 
         let result = IntersectionSearchSpace::calculate(&[trial]);
         assert_eq!(result.len(), 2);
-        assert!(result.contains_key("x"));
-        assert!(result.contains_key("y"));
-        assert_eq!(result.get("x"), Some(&dist_x));
-        assert_eq!(result.get("y"), Some(&dist_y));
+        assert!(result.contains_key(&x_id));
+        assert!(result.contains_key(&y_id));
+        assert_eq!(result.get(&x_id), Some(&dist_x));
+        assert_eq!(result.get(&y_id), Some(&dist_y));
     }
 
     #[test]
     fn test_all_trials_same_params() {
+        let x_id = ParamId::new();
+        let y_id = ParamId::new();
         let dist_x = Distribution::Float(FloatDistribution {
             low: 0.0,
             high: 1.0,
@@ -369,8 +371,8 @@ mod tests {
                 create_trial(
                     i,
                     vec![
-                        ("x", ParamValue::Float(val), dist_x.clone()),
-                        ("y", ParamValue::Float(val - 0.5), dist_y.clone()),
+                        (x_id, ParamValue::Float(val), dist_x.clone()),
+                        (y_id, ParamValue::Float(val - 0.5), dist_y.clone()),
                     ],
                     val * val,
                 )
@@ -379,12 +381,15 @@ mod tests {
 
         let result = IntersectionSearchSpace::calculate(&trials);
         assert_eq!(result.len(), 2);
-        assert!(result.contains_key("x"));
-        assert!(result.contains_key("y"));
+        assert!(result.contains_key(&x_id));
+        assert!(result.contains_key(&y_id));
     }
 
     #[test]
     fn test_partial_overlap() {
+        let x_id = ParamId::new();
+        let y_id = ParamId::new();
+        let z_id = ParamId::new();
         let dist_x = Distribution::Float(FloatDistribution {
             low: 0.0,
             high: 1.0,
@@ -408,8 +413,8 @@ mod tests {
         let trial1 = create_trial(
             0,
             vec![
-                ("x", ParamValue::Float(0.5), dist_x.clone()),
-                ("y", ParamValue::Float(0.3), dist_y.clone()),
+                (x_id, ParamValue::Float(0.5), dist_x.clone()),
+                (y_id, ParamValue::Float(0.3), dist_y.clone()),
             ],
             1.0,
         );
@@ -418,8 +423,8 @@ mod tests {
         let trial2 = create_trial(
             1,
             vec![
-                ("x", ParamValue::Float(0.7), dist_x.clone()),
-                ("z", ParamValue::Float(0.2), dist_z.clone()),
+                (x_id, ParamValue::Float(0.7), dist_x.clone()),
+                (z_id, ParamValue::Float(0.2), dist_z.clone()),
             ],
             0.5,
         );
@@ -428,24 +433,26 @@ mod tests {
         let trial3 = create_trial(
             2,
             vec![
-                ("x", ParamValue::Float(0.6), dist_x.clone()),
-                ("y", ParamValue::Float(0.4), dist_y.clone()),
-                ("z", ParamValue::Float(0.1), dist_z.clone()),
+                (x_id, ParamValue::Float(0.6), dist_x.clone()),
+                (y_id, ParamValue::Float(0.4), dist_y.clone()),
+                (z_id, ParamValue::Float(0.1), dist_z.clone()),
             ],
             0.8,
         );
 
         let result = IntersectionSearchSpace::calculate(&[trial1, trial2, trial3]);
 
-        // Only "x" appears in all three trials
+        // Only x appears in all three trials
         assert_eq!(result.len(), 1);
-        assert!(result.contains_key("x"));
-        assert!(!result.contains_key("y"));
-        assert!(!result.contains_key("z"));
+        assert!(result.contains_key(&x_id));
+        assert!(!result.contains_key(&y_id));
+        assert!(!result.contains_key(&z_id));
     }
 
     #[test]
     fn test_no_common_params() {
+        let x_id = ParamId::new();
+        let y_id = ParamId::new();
         let dist_x = Distribution::Float(FloatDistribution {
             low: 0.0,
             high: 1.0,
@@ -460,10 +467,10 @@ mod tests {
         });
 
         // Trial 1: only x
-        let trial1 = create_trial(0, vec![("x", ParamValue::Float(0.5), dist_x.clone())], 1.0);
+        let trial1 = create_trial(0, vec![(x_id, ParamValue::Float(0.5), dist_x.clone())], 1.0);
 
         // Trial 2: only y
-        let trial2 = create_trial(1, vec![("y", ParamValue::Float(0.3), dist_y.clone())], 0.5);
+        let trial2 = create_trial(1, vec![(y_id, ParamValue::Float(0.3), dist_y.clone())], 0.5);
 
         let result = IntersectionSearchSpace::calculate(&[trial1, trial2]);
 
@@ -473,6 +480,9 @@ mod tests {
 
     #[test]
     fn test_mixed_distribution_types() {
+        let lr_id = ParamId::new();
+        let n_layers_id = ParamId::new();
+        let optimizer_id = ParamId::new();
         let dist_float = Distribution::Float(FloatDistribution {
             low: 0.0,
             high: 1.0,
@@ -490,9 +500,9 @@ mod tests {
         let trial1 = create_trial(
             0,
             vec![
-                ("learning_rate", ParamValue::Float(0.01), dist_float.clone()),
-                ("n_layers", ParamValue::Int(3), dist_int.clone()),
-                ("optimizer", ParamValue::Categorical(0), dist_cat.clone()),
+                (lr_id, ParamValue::Float(0.01), dist_float.clone()),
+                (n_layers_id, ParamValue::Int(3), dist_int.clone()),
+                (optimizer_id, ParamValue::Categorical(0), dist_cat.clone()),
             ],
             1.0,
         );
@@ -500,13 +510,9 @@ mod tests {
         let trial2 = create_trial(
             1,
             vec![
-                (
-                    "learning_rate",
-                    ParamValue::Float(0.001),
-                    dist_float.clone(),
-                ),
-                ("n_layers", ParamValue::Int(5), dist_int.clone()),
-                ("optimizer", ParamValue::Categorical(1), dist_cat.clone()),
+                (lr_id, ParamValue::Float(0.001), dist_float.clone()),
+                (n_layers_id, ParamValue::Int(5), dist_int.clone()),
+                (optimizer_id, ParamValue::Categorical(1), dist_cat.clone()),
             ],
             0.8,
         );
@@ -514,19 +520,20 @@ mod tests {
         let result = IntersectionSearchSpace::calculate(&[trial1, trial2]);
 
         assert_eq!(result.len(), 3);
+        assert!(matches!(result.get(&lr_id), Some(Distribution::Float(_))));
         assert!(matches!(
-            result.get("learning_rate"),
-            Some(Distribution::Float(_))
+            result.get(&n_layers_id),
+            Some(Distribution::Int(_))
         ));
-        assert!(matches!(result.get("n_layers"), Some(Distribution::Int(_))));
         assert!(matches!(
-            result.get("optimizer"),
+            result.get(&optimizer_id),
             Some(Distribution::Categorical(_))
         ));
     }
 
     #[test]
     fn test_distribution_from_first_trial() {
+        let x_id = ParamId::new();
         // Test that when distributions differ, the first trial's distribution is used
         let dist_x_v1 = Distribution::Float(FloatDistribution {
             low: 0.0,
@@ -543,13 +550,13 @@ mod tests {
 
         let trial1 = create_trial(
             0,
-            vec![("x", ParamValue::Float(0.5), dist_x_v1.clone())],
+            vec![(x_id, ParamValue::Float(0.5), dist_x_v1.clone())],
             1.0,
         );
 
         let trial2 = create_trial(
             1,
-            vec![("x", ParamValue::Float(5.0), dist_x_v2.clone())],
+            vec![(x_id, ParamValue::Float(5.0), dist_x_v2.clone())],
             0.5,
         );
 
@@ -557,13 +564,15 @@ mod tests {
 
         assert_eq!(result.len(), 1);
         // Should use the distribution from the first trial
-        assert_eq!(result.get("x"), Some(&dist_x_v1));
+        assert_eq!(result.get(&x_id), Some(&dist_x_v1));
     }
 
     #[test]
     fn test_many_trials_with_conditional_params() {
+        let lr_id = ParamId::new();
+        let use_dropout_id = ParamId::new();
+        let dropout_rate_id = ParamId::new();
         // Simulate a scenario with conditional parameters
-        // e.g., "use_dropout" is a bool, and "dropout_rate" only exists when use_dropout=true
         let dist_lr = Distribution::Float(FloatDistribution {
             low: 1e-5,
             high: 1e-1,
@@ -582,14 +591,14 @@ mod tests {
         let trial1 = create_trial(
             0,
             vec![
-                ("lr", ParamValue::Float(0.01), dist_lr.clone()),
+                (lr_id, ParamValue::Float(0.01), dist_lr.clone()),
                 (
-                    "use_dropout",
+                    use_dropout_id,
                     ParamValue::Categorical(1),
                     dist_dropout.clone(),
                 ),
                 (
-                    "dropout_rate",
+                    dropout_rate_id,
                     ParamValue::Float(0.2),
                     dist_dropout_rate.clone(),
                 ),
@@ -601,9 +610,9 @@ mod tests {
         let trial2 = create_trial(
             1,
             vec![
-                ("lr", ParamValue::Float(0.001), dist_lr.clone()),
+                (lr_id, ParamValue::Float(0.001), dist_lr.clone()),
                 (
-                    "use_dropout",
+                    use_dropout_id,
                     ParamValue::Categorical(0),
                     dist_dropout.clone(),
                 ),
@@ -615,14 +624,14 @@ mod tests {
         let trial3 = create_trial(
             2,
             vec![
-                ("lr", ParamValue::Float(0.005), dist_lr.clone()),
+                (lr_id, ParamValue::Float(0.005), dist_lr.clone()),
                 (
-                    "use_dropout",
+                    use_dropout_id,
                     ParamValue::Categorical(1),
                     dist_dropout.clone(),
                 ),
                 (
-                    "dropout_rate",
+                    dropout_rate_id,
                     ParamValue::Float(0.3),
                     dist_dropout_rate.clone(),
                 ),
@@ -632,11 +641,11 @@ mod tests {
 
         let result = IntersectionSearchSpace::calculate(&[trial1, trial2, trial3]);
 
-        // Only "lr" and "use_dropout" appear in all trials
+        // Only lr and use_dropout appear in all trials
         assert_eq!(result.len(), 2);
-        assert!(result.contains_key("lr"));
-        assert!(result.contains_key("use_dropout"));
-        assert!(!result.contains_key("dropout_rate")); // Not in trial2
+        assert!(result.contains_key(&lr_id));
+        assert!(result.contains_key(&use_dropout_id));
+        assert!(!result.contains_key(&dropout_rate_id)); // Not in trial2
     }
 
     // ==================== GroupDecomposedSearchSpace Tests ====================
@@ -657,12 +666,13 @@ mod tests {
             step: None,
         });
 
-        let trial = create_trial(0, vec![("x", ParamValue::Float(0.5), dist)], 1.0);
+        let x_id = ParamId::new();
+        let trial = create_trial(0, vec![(x_id, ParamValue::Float(0.5), dist)], 1.0);
 
         let groups = GroupDecomposedSearchSpace::calculate(&[trial]);
 
         assert_eq!(groups.len(), 1);
-        assert!(groups[0].contains("x"));
+        assert!(groups[0].contains(&x_id));
         assert_eq!(groups[0].len(), 1);
     }
 
@@ -675,12 +685,15 @@ mod tests {
             step: None,
         });
 
+        let x_id = ParamId::new();
+        let y_id = ParamId::new();
+        let z_id = ParamId::new();
         let trial = create_trial(
             0,
             vec![
-                ("x", ParamValue::Float(0.5), dist.clone()),
-                ("y", ParamValue::Float(0.3), dist.clone()),
-                ("z", ParamValue::Float(0.7), dist),
+                (x_id, ParamValue::Float(0.5), dist.clone()),
+                (y_id, ParamValue::Float(0.3), dist.clone()),
+                (z_id, ParamValue::Float(0.7), dist),
             ],
             1.0,
         );
@@ -690,9 +703,9 @@ mod tests {
         // All params appear together, so one group
         assert_eq!(groups.len(), 1);
         assert_eq!(groups[0].len(), 3);
-        assert!(groups[0].contains("x"));
-        assert!(groups[0].contains("y"));
-        assert!(groups[0].contains("z"));
+        assert!(groups[0].contains(&x_id));
+        assert!(groups[0].contains(&y_id));
+        assert!(groups[0].contains(&z_id));
     }
 
     #[test]
@@ -704,12 +717,17 @@ mod tests {
             step: None,
         });
 
+        let x_id = ParamId::new();
+        let y_id = ParamId::new();
+        let a_id = ParamId::new();
+        let b_id = ParamId::new();
+
         // Trial 1: x, y (group 1)
         let trial1 = create_trial(
             0,
             vec![
-                ("x", ParamValue::Float(0.1), dist.clone()),
-                ("y", ParamValue::Float(0.2), dist.clone()),
+                (x_id, ParamValue::Float(0.1), dist.clone()),
+                (y_id, ParamValue::Float(0.2), dist.clone()),
             ],
             1.0,
         );
@@ -718,8 +736,8 @@ mod tests {
         let trial2 = create_trial(
             1,
             vec![
-                ("a", ParamValue::Float(0.3), dist.clone()),
-                ("b", ParamValue::Float(0.4), dist),
+                (a_id, ParamValue::Float(0.3), dist.clone()),
+                (b_id, ParamValue::Float(0.4), dist),
             ],
             0.5,
         );
@@ -730,8 +748,8 @@ mod tests {
         assert_eq!(groups.len(), 2);
 
         // Find which group has x/y and which has a/b
-        let group_xy = groups.iter().find(|g| g.contains("x"));
-        let group_ab = groups.iter().find(|g| g.contains("a"));
+        let group_xy = groups.iter().find(|g| g.contains(&x_id));
+        let group_ab = groups.iter().find(|g| g.contains(&a_id));
 
         assert!(group_xy.is_some());
         assert!(group_ab.is_some());
@@ -740,12 +758,12 @@ mod tests {
         let group_ab = group_ab.expect("group with a should exist");
 
         assert_eq!(group_xy.len(), 2);
-        assert!(group_xy.contains("x"));
-        assert!(group_xy.contains("y"));
+        assert!(group_xy.contains(&x_id));
+        assert!(group_xy.contains(&y_id));
 
         assert_eq!(group_ab.len(), 2);
-        assert!(group_ab.contains("a"));
-        assert!(group_ab.contains("b"));
+        assert!(group_ab.contains(&a_id));
+        assert!(group_ab.contains(&b_id));
     }
 
     #[test]
@@ -757,12 +775,16 @@ mod tests {
             step: None,
         });
 
+        let x_id = ParamId::new();
+        let y_id = ParamId::new();
+        let z_id = ParamId::new();
+
         // Trial 1: x, y
         let trial1 = create_trial(
             0,
             vec![
-                ("x", ParamValue::Float(0.1), dist.clone()),
-                ("y", ParamValue::Float(0.2), dist.clone()),
+                (x_id, ParamValue::Float(0.1), dist.clone()),
+                (y_id, ParamValue::Float(0.2), dist.clone()),
             ],
             1.0,
         );
@@ -771,8 +793,8 @@ mod tests {
         let trial2 = create_trial(
             1,
             vec![
-                ("y", ParamValue::Float(0.3), dist.clone()),
-                ("z", ParamValue::Float(0.4), dist),
+                (y_id, ParamValue::Float(0.3), dist.clone()),
+                (z_id, ParamValue::Float(0.4), dist),
             ],
             0.5,
         );
@@ -782,9 +804,9 @@ mod tests {
         // All should be in one group due to transitive connection via y
         assert_eq!(groups.len(), 1);
         assert_eq!(groups[0].len(), 3);
-        assert!(groups[0].contains("x"));
-        assert!(groups[0].contains("y"));
-        assert!(groups[0].contains("z"));
+        assert!(groups[0].contains(&x_id));
+        assert!(groups[0].contains(&y_id));
+        assert!(groups[0].contains(&z_id));
     }
 
     #[test]
@@ -796,33 +818,35 @@ mod tests {
             step: None,
         });
 
+        let a_id = ParamId::new();
+        let b_id = ParamId::new();
+        let c_id = ParamId::new();
+        let d_id = ParamId::new();
+
         // Create a chain: a-b, b-c, c-d
-        // Trial 1: a, b
         let trial1 = create_trial(
             0,
             vec![
-                ("a", ParamValue::Float(0.1), dist.clone()),
-                ("b", ParamValue::Float(0.2), dist.clone()),
+                (a_id, ParamValue::Float(0.1), dist.clone()),
+                (b_id, ParamValue::Float(0.2), dist.clone()),
             ],
             1.0,
         );
 
-        // Trial 2: b, c
         let trial2 = create_trial(
             1,
             vec![
-                ("b", ParamValue::Float(0.3), dist.clone()),
-                ("c", ParamValue::Float(0.4), dist.clone()),
+                (b_id, ParamValue::Float(0.3), dist.clone()),
+                (c_id, ParamValue::Float(0.4), dist.clone()),
             ],
             0.5,
         );
 
-        // Trial 3: c, d
         let trial3 = create_trial(
             2,
             vec![
-                ("c", ParamValue::Float(0.5), dist.clone()),
-                ("d", ParamValue::Float(0.6), dist),
+                (c_id, ParamValue::Float(0.5), dist.clone()),
+                (d_id, ParamValue::Float(0.6), dist),
             ],
             0.3,
         );
@@ -832,10 +856,10 @@ mod tests {
         // All should be connected in one group
         assert_eq!(groups.len(), 1);
         assert_eq!(groups[0].len(), 4);
-        assert!(groups[0].contains("a"));
-        assert!(groups[0].contains("b"));
-        assert!(groups[0].contains("c"));
-        assert!(groups[0].contains("d"));
+        assert!(groups[0].contains(&a_id));
+        assert!(groups[0].contains(&b_id));
+        assert!(groups[0].contains(&c_id));
+        assert!(groups[0].contains(&d_id));
     }
 
     #[test]
@@ -847,10 +871,14 @@ mod tests {
             step: None,
         });
 
+        let x_id = ParamId::new();
+        let y_id = ParamId::new();
+        let z_id = ParamId::new();
+
         // Each trial has exactly one parameter (all isolated)
-        let trial1 = create_trial(0, vec![("x", ParamValue::Float(0.1), dist.clone())], 1.0);
-        let trial2 = create_trial(1, vec![("y", ParamValue::Float(0.2), dist.clone())], 0.5);
-        let trial3 = create_trial(2, vec![("z", ParamValue::Float(0.3), dist)], 0.3);
+        let trial1 = create_trial(0, vec![(x_id, ParamValue::Float(0.1), dist.clone())], 1.0);
+        let trial2 = create_trial(1, vec![(y_id, ParamValue::Float(0.2), dist.clone())], 0.5);
+        let trial3 = create_trial(2, vec![(z_id, ParamValue::Float(0.3), dist)], 0.3);
 
         let groups = GroupDecomposedSearchSpace::calculate(&[trial1, trial2, trial3]);
 
@@ -861,10 +889,10 @@ mod tests {
         }
 
         // Verify all params are covered
-        let all_params: HashSet<String> = groups.iter().flatten().cloned().collect();
-        assert!(all_params.contains("x"));
-        assert!(all_params.contains("y"));
-        assert!(all_params.contains("z"));
+        let all_params: HashSet<ParamId> = groups.iter().flatten().copied().collect();
+        assert!(all_params.contains(&x_id));
+        assert!(all_params.contains(&y_id));
+        assert!(all_params.contains(&z_id));
     }
 
     #[test]
@@ -876,51 +904,54 @@ mod tests {
             step: None,
         });
 
+        let x_id = ParamId::new();
+        let y_id = ParamId::new();
+        let z_id = ParamId::new();
+        let a_id = ParamId::new();
+        let b_id = ParamId::new();
+        let w_id = ParamId::new();
+
         // Group 1: x, y, z connected
         // Group 2: a, b connected
         // w is isolated
 
-        // Trial 1: x, y
         let trial1 = create_trial(
             0,
             vec![
-                ("x", ParamValue::Float(0.1), dist.clone()),
-                ("y", ParamValue::Float(0.2), dist.clone()),
+                (x_id, ParamValue::Float(0.1), dist.clone()),
+                (y_id, ParamValue::Float(0.2), dist.clone()),
             ],
             1.0,
         );
 
-        // Trial 2: y, z
         let trial2 = create_trial(
             1,
             vec![
-                ("y", ParamValue::Float(0.3), dist.clone()),
-                ("z", ParamValue::Float(0.4), dist.clone()),
+                (y_id, ParamValue::Float(0.3), dist.clone()),
+                (z_id, ParamValue::Float(0.4), dist.clone()),
             ],
             0.5,
         );
 
-        // Trial 3: a, b
         let trial3 = create_trial(
             2,
             vec![
-                ("a", ParamValue::Float(0.5), dist.clone()),
-                ("b", ParamValue::Float(0.6), dist.clone()),
+                (a_id, ParamValue::Float(0.5), dist.clone()),
+                (b_id, ParamValue::Float(0.6), dist.clone()),
             ],
             0.3,
         );
 
-        // Trial 4: w (isolated)
-        let trial4 = create_trial(3, vec![("w", ParamValue::Float(0.7), dist)], 0.2);
+        let trial4 = create_trial(3, vec![(w_id, ParamValue::Float(0.7), dist)], 0.2);
 
         let groups = GroupDecomposedSearchSpace::calculate(&[trial1, trial2, trial3, trial4]);
 
         // Should have 3 groups: {x,y,z}, {a,b}, {w}
         assert_eq!(groups.len(), 3);
 
-        let group_xyz = groups.iter().find(|g| g.contains("x"));
-        let group_ab = groups.iter().find(|g| g.contains("a"));
-        let group_w = groups.iter().find(|g| g.contains("w"));
+        let group_xyz = groups.iter().find(|g| g.contains(&x_id));
+        let group_ab = groups.iter().find(|g| g.contains(&a_id));
+        let group_w = groups.iter().find(|g| g.contains(&w_id));
 
         assert!(group_xyz.is_some());
         assert!(group_ab.is_some());
@@ -928,18 +959,18 @@ mod tests {
 
         let group_xyz = group_xyz.expect("group with x should exist");
         assert_eq!(group_xyz.len(), 3);
-        assert!(group_xyz.contains("x"));
-        assert!(group_xyz.contains("y"));
-        assert!(group_xyz.contains("z"));
+        assert!(group_xyz.contains(&x_id));
+        assert!(group_xyz.contains(&y_id));
+        assert!(group_xyz.contains(&z_id));
 
         let group_ab = group_ab.expect("group with a should exist");
         assert_eq!(group_ab.len(), 2);
-        assert!(group_ab.contains("a"));
-        assert!(group_ab.contains("b"));
+        assert!(group_ab.contains(&a_id));
+        assert!(group_ab.contains(&b_id));
 
         let group_w = group_w.expect("group with w should exist");
         assert_eq!(group_w.len(), 1);
-        assert!(group_w.contains("w"));
+        assert!(group_w.contains(&w_id));
     }
 
     #[test]
@@ -951,14 +982,19 @@ mod tests {
             step: None,
         });
 
+        let a_id = ParamId::new();
+        let b_id = ParamId::new();
+        let c_id = ParamId::new();
+        let d_id = ParamId::new();
+
         // All params in single trial
         let trial = create_trial(
             0,
             vec![
-                ("a", ParamValue::Float(0.1), dist.clone()),
-                ("b", ParamValue::Float(0.2), dist.clone()),
-                ("c", ParamValue::Float(0.3), dist.clone()),
-                ("d", ParamValue::Float(0.4), dist),
+                (a_id, ParamValue::Float(0.1), dist.clone()),
+                (b_id, ParamValue::Float(0.2), dist.clone()),
+                (c_id, ParamValue::Float(0.3), dist.clone()),
+                (d_id, ParamValue::Float(0.4), dist),
             ],
             1.0,
         );
@@ -972,6 +1008,9 @@ mod tests {
 
     #[test]
     fn test_group_with_mixed_distribution_types() {
+        let lr_id = ParamId::new();
+        let n_layers_id = ParamId::new();
+        let optimizer_id = ParamId::new();
         let dist_float = Distribution::Float(FloatDistribution {
             low: 0.0,
             high: 1.0,
@@ -991,23 +1030,23 @@ mod tests {
         let trial1 = create_trial(
             0,
             vec![
-                ("learning_rate", ParamValue::Float(0.01), dist_float.clone()),
-                ("n_layers", ParamValue::Int(3), dist_int.clone()),
+                (lr_id, ParamValue::Float(0.01), dist_float.clone()),
+                (n_layers_id, ParamValue::Int(3), dist_int.clone()),
             ],
             1.0,
         );
 
         let trial2 = create_trial(
             1,
-            vec![("optimizer", ParamValue::Categorical(1), dist_cat)],
+            vec![(optimizer_id, ParamValue::Categorical(1), dist_cat)],
             0.5,
         );
 
         let trial3 = create_trial(
             2,
             vec![
-                ("learning_rate", ParamValue::Float(0.001), dist_float),
-                ("n_layers", ParamValue::Int(5), dist_int),
+                (lr_id, ParamValue::Float(0.001), dist_float),
+                (n_layers_id, ParamValue::Int(5), dist_int),
             ],
             0.8,
         );
@@ -1017,20 +1056,20 @@ mod tests {
         // Should have 2 groups: {learning_rate, n_layers} and {optimizer}
         assert_eq!(groups.len(), 2);
 
-        let group_lr = groups.iter().find(|g| g.contains("learning_rate"));
-        let group_opt = groups.iter().find(|g| g.contains("optimizer"));
+        let group_lr = groups.iter().find(|g| g.contains(&lr_id));
+        let group_opt = groups.iter().find(|g| g.contains(&optimizer_id));
 
         assert!(group_lr.is_some());
         assert!(group_opt.is_some());
 
         let group_lr = group_lr.expect("group with learning_rate should exist");
         assert_eq!(group_lr.len(), 2);
-        assert!(group_lr.contains("learning_rate"));
-        assert!(group_lr.contains("n_layers"));
+        assert!(group_lr.contains(&lr_id));
+        assert!(group_lr.contains(&n_layers_id));
 
         let group_opt = group_opt.expect("group with optimizer should exist");
         assert_eq!(group_opt.len(), 1);
-        assert!(group_opt.contains("optimizer"));
+        assert!(group_opt.contains(&optimizer_id));
     }
 
     #[test]
@@ -1042,15 +1081,17 @@ mod tests {
             step: None,
         });
 
+        let center_id = ParamId::new();
+        let a_id = ParamId::new();
+        let b_id = ParamId::new();
+        let c_id = ParamId::new();
+
         // Star topology: center connects to all others
-        // Trial 1: center, a
-        // Trial 2: center, b
-        // Trial 3: center, c
         let trial1 = create_trial(
             0,
             vec![
-                ("center", ParamValue::Float(0.1), dist.clone()),
-                ("a", ParamValue::Float(0.2), dist.clone()),
+                (center_id, ParamValue::Float(0.1), dist.clone()),
+                (a_id, ParamValue::Float(0.2), dist.clone()),
             ],
             1.0,
         );
@@ -1058,8 +1099,8 @@ mod tests {
         let trial2 = create_trial(
             1,
             vec![
-                ("center", ParamValue::Float(0.3), dist.clone()),
-                ("b", ParamValue::Float(0.4), dist.clone()),
+                (center_id, ParamValue::Float(0.3), dist.clone()),
+                (b_id, ParamValue::Float(0.4), dist.clone()),
             ],
             0.5,
         );
@@ -1067,8 +1108,8 @@ mod tests {
         let trial3 = create_trial(
             2,
             vec![
-                ("center", ParamValue::Float(0.5), dist.clone()),
-                ("c", ParamValue::Float(0.6), dist),
+                (center_id, ParamValue::Float(0.5), dist.clone()),
+                (c_id, ParamValue::Float(0.6), dist),
             ],
             0.3,
         );
@@ -1078,9 +1119,9 @@ mod tests {
         // All connected via center
         assert_eq!(groups.len(), 1);
         assert_eq!(groups[0].len(), 4);
-        assert!(groups[0].contains("center"));
-        assert!(groups[0].contains("a"));
-        assert!(groups[0].contains("b"));
-        assert!(groups[0].contains("c"));
+        assert!(groups[0].contains(&center_id));
+        assert!(groups[0].contains(&a_id));
+        assert!(groups[0].contains(&b_id));
+        assert!(groups[0].contains(&c_id));
     }
 }

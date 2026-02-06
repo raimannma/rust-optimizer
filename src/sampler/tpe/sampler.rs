@@ -1024,19 +1024,20 @@ mod tests {
 
     use super::*;
     use crate::distribution::{CategoricalDistribution, FloatDistribution, IntDistribution};
+    use crate::parameter::ParamId;
 
     fn create_trial(
         id: u64,
         value: f64,
-        params: Vec<(&str, ParamValue, Distribution)>,
+        params: Vec<(ParamId, ParamValue, Distribution)>,
     ) -> CompletedTrial {
         let mut param_map = HashMap::new();
         let mut dist_map = HashMap::new();
-        for (name, pv, dist) in params {
-            param_map.insert(name.to_string(), pv);
-            dist_map.insert(name.to_string(), dist);
+        for (param_id, pv, dist) in params {
+            param_map.insert(param_id, pv);
+            dist_map.insert(param_id, dist);
         }
-        CompletedTrial::new(id, param_map, dist_map, value)
+        CompletedTrial::new(id, param_map, dist_map, HashMap::new(), value)
     }
 
     #[test]
@@ -1104,12 +1105,13 @@ mod tests {
         });
 
         // Create 20 trials with values 0..20
+        let x_id = ParamId::new();
         let history: Vec<CompletedTrial> = (0..20)
             .map(|i| {
                 create_trial(
                     i as u64,
                     f64::from(i),
-                    vec![("x", ParamValue::Float(f64::from(i) / 20.0), dist.clone())],
+                    vec![(x_id, ParamValue::Float(f64::from(i) / 20.0), dist.clone())],
                 )
             })
             .collect();
@@ -1138,6 +1140,7 @@ mod tests {
         });
 
         // Create history where low values (near 0.2) are "good"
+        let x_id = ParamId::new();
         let history: Vec<CompletedTrial> = (0..20)
             .map(|i| {
                 let x = f64::from(i) / 20.0;
@@ -1146,7 +1149,7 @@ mod tests {
                 create_trial(
                     i as u64,
                     value,
-                    vec![("x", ParamValue::Float(x), dist.clone())],
+                    vec![(x_id, ParamValue::Float(x), dist.clone())],
                 )
             })
             .collect();
@@ -1175,6 +1178,7 @@ mod tests {
         let dist = Distribution::Categorical(CategoricalDistribution { n_choices: 4 });
 
         // Create history where category 1 is consistently good
+        let cat_id = ParamId::new();
         let history: Vec<CompletedTrial> = (0..20)
             .map(|i| {
                 let category = i % 4;
@@ -1184,7 +1188,7 @@ mod tests {
                     i as u64,
                     value,
                     vec![(
-                        "cat",
+                        cat_id,
                         ParamValue::Categorical(category as usize),
                         dist.clone(),
                     )],
@@ -1220,6 +1224,7 @@ mod tests {
         });
 
         // Create history where values near 30 are good
+        let x_id = ParamId::new();
         let history: Vec<CompletedTrial> = (0..20)
             .map(|i| {
                 let x = i * 5; // 0, 5, 10, ..., 95
@@ -1227,7 +1232,7 @@ mod tests {
                 create_trial(
                     i as u64,
                     value,
-                    vec![("x", ParamValue::Int(x), dist.clone())],
+                    vec![(x_id, ParamValue::Int(x), dist.clone())],
                 )
             })
             .collect();
@@ -1252,12 +1257,13 @@ mod tests {
             step: None,
         });
 
+        let x_id = ParamId::new();
         let history: Vec<CompletedTrial> = (0..20)
             .map(|i| {
                 create_trial(
                     i as u64,
                     f64::from(i),
-                    vec![("x", ParamValue::Float(f64::from(i) / 20.0), dist.clone())],
+                    vec![(x_id, ParamValue::Float(f64::from(i) / 20.0), dist.clone())],
                 )
             })
             .collect();
@@ -1332,12 +1338,13 @@ mod tests {
             step: None,
         });
 
+        let x_id = ParamId::new();
         let history: Vec<CompletedTrial> = (0..20u32)
             .map(|i| {
                 create_trial(
                     u64::from(i),
                     f64::from(i),
-                    vec![("x", ParamValue::Float(f64::from(i) / 20.0), dist.clone())],
+                    vec![(x_id, ParamValue::Float(f64::from(i) / 20.0), dist.clone())],
                 )
             })
             .collect();

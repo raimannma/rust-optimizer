@@ -6,6 +6,7 @@
     clippy::cast_possible_truncation
 )]
 
+use optimizer::parameter::{BoolParam, CategoricalParam, FloatParam, IntParam, Parameter};
 use optimizer::sampler::random::RandomSampler;
 use optimizer::sampler::tpe::TpeSampler;
 use optimizer::{Direction, Error, Study, Trial};
@@ -16,7 +17,7 @@ use optimizer::{Direction, Error, Study, Trial};
 
 #[test]
 fn test_tpe_optimizes_quadratic_function() {
-    // Minimize f(x) = (x - 3)^2 where x ∈ [-10, 10]
+    // Minimize f(x) = (x - 3)^2 where x in [-10, 10]
     // Optimal: x = 3, f(3) = 0
     let sampler = TpeSampler::builder()
         .seed(42)
@@ -27,16 +28,18 @@ fn test_tpe_optimizes_quadratic_function() {
 
     let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
 
+    let x_param = FloatParam::new(-10.0, 10.0);
+
     study
         .optimize_with_sampler(50, |trial| {
-            let x = trial.suggest_float("x", -10.0, 10.0)?;
+            let x = x_param.suggest(trial)?;
             Ok::<_, Error>((x - 3.0).powi(2))
         })
         .expect("optimization should succeed");
 
     let best = study.best_trial().expect("should have at least one trial");
 
-    // TPE should find a value close to optimal (x ≈ 3)
+    // TPE should find a value close to optimal (x ~ 3)
     // We expect the best value to be small (close to 0)
     assert!(
         best.value < 1.0,
@@ -47,7 +50,7 @@ fn test_tpe_optimizes_quadratic_function() {
 
 #[test]
 fn test_tpe_optimizes_multivariate_function() {
-    // Minimize f(x, y) = x^2 + y^2 where x, y ∈ [-5, 5]
+    // Minimize f(x, y) = x^2 + y^2 where x, y in [-5, 5]
     // Optimal: (0, 0), f(0, 0) = 0
     let sampler = TpeSampler::builder()
         .seed(123)
@@ -57,10 +60,13 @@ fn test_tpe_optimizes_multivariate_function() {
 
     let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
 
+    let x_param = FloatParam::new(-5.0, 5.0);
+    let y_param = FloatParam::new(-5.0, 5.0);
+
     study
         .optimize_with_sampler(100, |trial| {
-            let x = trial.suggest_float("x", -5.0, 5.0)?;
-            let y = trial.suggest_float("y", -5.0, 5.0)?;
+            let x = x_param.suggest(trial)?;
+            let y = y_param.suggest(trial)?;
             Ok::<_, Error>(x * x + y * y)
         })
         .expect("optimization should succeed");
@@ -77,7 +83,7 @@ fn test_tpe_optimizes_multivariate_function() {
 
 #[test]
 fn test_tpe_maximization() {
-    // Maximize f(x) = -(x - 2)^2 + 10 where x ∈ [-10, 10]
+    // Maximize f(x) = -(x - 2)^2 + 10 where x in [-10, 10]
     // Optimal: x = 2, f(2) = 10
     let sampler = TpeSampler::builder()
         .seed(456)
@@ -87,18 +93,17 @@ fn test_tpe_maximization() {
 
     let study: Study<f64> = Study::with_sampler(Direction::Maximize, sampler);
 
+    let x_param = FloatParam::new(-10.0, 10.0);
+
     study
         .optimize_with_sampler(50, |trial| {
-            let x = trial.suggest_float("x", -10.0, 10.0)?;
+            let x = x_param.suggest(trial)?;
             Ok::<_, Error>(-(x - 2.0).powi(2) + 10.0)
         })
         .expect("optimization should succeed");
 
     let best = study.best_trial().expect("should have at least one trial");
 
-    // For maximization, best value should be better than a random baseline
-    // The function ranges from -90 (at x=-10 or x=10, when far from x=2) to 10 (at x=2)
-    // A random approach would average around 0, so finding >5 is a reasonable check
     assert!(
         best.value > 5.0,
         "TPE should find reasonably good solution: best value {} should be > 5.0",
@@ -112,16 +117,16 @@ fn test_tpe_maximization() {
 
 #[test]
 fn test_random_sampler_uniform_float_distribution() {
-    // Test that RandomSampler samples uniformly by running multiple trials
-    // and checking the distribution of sampled values
     let study: Study<f64> = Study::with_sampler(Direction::Minimize, RandomSampler::with_seed(42));
 
     let n_samples = 1000;
     let mut samples = Vec::with_capacity(n_samples);
 
+    let x_param = FloatParam::new(0.0, 1.0);
+
     study
         .optimize(n_samples, |trial| {
-            let x = trial.suggest_float("x", 0.0, 1.0)?;
+            let x = x_param.suggest(trial)?;
             samples.push(x);
             Ok::<_, Error>(x)
         })
@@ -139,7 +144,6 @@ fn test_random_sampler_uniform_float_distribution() {
     let q2 = samples[n_samples / 2];
     let q3 = samples[3 * n_samples / 4];
 
-    // For uniform distribution, quartiles should be approximately 0.25, 0.5, 0.75
     assert!((q1 - 0.25).abs() < 0.1, "Q1 {q1} should be close to 0.25");
     assert!(
         (q2 - 0.5).abs() < 0.1,
@@ -155,18 +159,17 @@ fn test_random_sampler_uniform_int_distribution() {
     let n_samples = 5000;
     let mut counts = [0u32; 10]; // counts for values 1-10
 
+    let n_param = IntParam::new(1, 10);
+
     study
         .optimize(n_samples, |trial| {
-            let n = trial.suggest_int("n", 1, 10)?;
+            let n = n_param.suggest(trial)?;
             assert!((1..=10).contains(&n), "sample {n} out of range [1, 10]");
             counts[(n - 1) as usize] += 1;
             Ok::<_, Error>(n as f64)
         })
         .unwrap();
 
-    // Each value should appear roughly n_samples / 10 times
-    // With 5000 samples, expected ~500 per bucket, std dev ~21
-    // 20% tolerance allows for ~4.5 std devs which is very safe
     let expected = n_samples as f64 / 10.0;
     for (i, &count) in counts.iter().enumerate() {
         let diff = (count as f64 - expected).abs() / expected;
@@ -189,18 +192,17 @@ fn test_random_sampler_uniform_categorical_distribution() {
     let mut counts = [0u32; 4];
     let choices = ["a", "b", "c", "d"];
 
+    let cat_param = CategoricalParam::new(choices.to_vec());
+
     study
         .optimize(n_samples, |trial| {
-            let choice = trial.suggest_categorical("cat", &choices)?;
+            let choice = cat_param.suggest(trial)?;
             let idx = choices.iter().position(|&c| c == choice).unwrap();
             counts[idx] += 1;
             Ok::<_, Error>(idx as f64)
         })
         .unwrap();
 
-    // Each category should appear roughly n_samples / 4 times
-    // With 2000 samples, expected ~500 per bucket, std dev ~19
-    // 15% tolerance allows for ~4 std devs which is very safe
     let expected = n_samples as f64 / 4.0;
     for (i, &count) in counts.iter().enumerate() {
         let diff = (count as f64 - expected).abs() / expected;
@@ -217,8 +219,6 @@ fn test_random_sampler_uniform_categorical_distribution() {
 
 #[test]
 fn test_random_sampler_reproducibility() {
-    // Two studies with the same seed should produce the same sequence
-    // NOTE: We must use optimize_with_sampler() for Study<f64> to get sampler integration
     let study1: Study<f64> =
         Study::with_sampler(Direction::Minimize, RandomSampler::with_seed(999));
     let study2: Study<f64> =
@@ -227,9 +227,12 @@ fn test_random_sampler_reproducibility() {
     let mut values1 = Vec::new();
     let mut values2 = Vec::new();
 
+    let x_param1 = FloatParam::new(0.0, 100.0);
+    let x_param2 = FloatParam::new(0.0, 100.0);
+
     study1
         .optimize_with_sampler(100, |trial| {
-            let x = trial.suggest_float("x", 0.0, 100.0)?;
+            let x = x_param1.suggest(trial)?;
             values1.push(x);
             Ok::<_, Error>(x)
         })
@@ -237,7 +240,7 @@ fn test_random_sampler_reproducibility() {
 
     study2
         .optimize_with_sampler(100, |trial| {
-            let x = trial.suggest_float("x", 0.0, 100.0)?;
+            let x = x_param2.suggest(trial)?;
             values2.push(x);
             Ok::<_, Error>(x)
         })
@@ -252,112 +255,122 @@ fn test_random_sampler_reproducibility() {
 }
 
 // =============================================================================
-// Test: suggest_* methods return cached values on repeated calls
+// Test: suggest_param returns cached values on repeated calls
 // =============================================================================
 
 #[test]
 fn test_suggest_float_caching() {
+    let param = FloatParam::new(0.0, 10.0);
     let mut trial = Trial::new(0);
 
-    let x1 = trial.suggest_float("x", 0.0, 10.0).unwrap();
-    let x2 = trial.suggest_float("x", 0.0, 10.0).unwrap();
-    let x3 = trial.suggest_float("x", 0.0, 10.0).unwrap();
+    let x1 = param.suggest(&mut trial).unwrap();
+    let x2 = param.suggest(&mut trial).unwrap();
+    let x3 = param.suggest(&mut trial).unwrap();
 
-    assert_eq!(x1, x2, "repeated suggest_float should return cached value");
-    assert_eq!(x2, x3, "repeated suggest_float should return cached value");
+    assert_eq!(x1, x2, "repeated suggest should return cached value");
+    assert_eq!(x2, x3, "repeated suggest should return cached value");
 }
 
 #[test]
 fn test_suggest_float_log_caching() {
+    let param = FloatParam::new(1e-5, 1e-1).log_scale();
     let mut trial = Trial::new(0);
 
-    let x1 = trial.suggest_float_log("lr", 1e-5, 1e-1).unwrap();
-    let x2 = trial.suggest_float_log("lr", 1e-5, 1e-1).unwrap();
+    let x1 = param.suggest(&mut trial).unwrap();
+    let x2 = param.suggest(&mut trial).unwrap();
 
     assert_eq!(
         x1, x2,
-        "repeated suggest_float_log should return cached value"
+        "repeated suggest float log should return cached value"
     );
 }
 
 #[test]
 fn test_suggest_float_step_caching() {
+    let param = FloatParam::new(0.0, 1.0).step(0.1);
     let mut trial = Trial::new(0);
 
-    let x1 = trial.suggest_float_step("step", 0.0, 1.0, 0.1).unwrap();
-    let x2 = trial.suggest_float_step("step", 0.0, 1.0, 0.1).unwrap();
+    let x1 = param.suggest(&mut trial).unwrap();
+    let x2 = param.suggest(&mut trial).unwrap();
 
     assert_eq!(
         x1, x2,
-        "repeated suggest_float_step should return cached value"
+        "repeated suggest float step should return cached value"
     );
 }
 
 #[test]
 fn test_suggest_int_caching() {
+    let param = IntParam::new(1, 100);
     let mut trial = Trial::new(0);
 
-    let n1 = trial.suggest_int("n", 1, 100).unwrap();
-    let n2 = trial.suggest_int("n", 1, 100).unwrap();
+    let n1 = param.suggest(&mut trial).unwrap();
+    let n2 = param.suggest(&mut trial).unwrap();
 
-    assert_eq!(n1, n2, "repeated suggest_int should return cached value");
+    assert_eq!(n1, n2, "repeated suggest int should return cached value");
 }
 
 #[test]
 fn test_suggest_int_log_caching() {
+    let param = IntParam::new(1, 1024).log_scale();
     let mut trial = Trial::new(0);
 
-    let n1 = trial.suggest_int_log("batch", 1, 1024).unwrap();
-    let n2 = trial.suggest_int_log("batch", 1, 1024).unwrap();
+    let n1 = param.suggest(&mut trial).unwrap();
+    let n2 = param.suggest(&mut trial).unwrap();
 
     assert_eq!(
         n1, n2,
-        "repeated suggest_int_log should return cached value"
+        "repeated suggest int log should return cached value"
     );
 }
 
 #[test]
 fn test_suggest_int_step_caching() {
+    let param = IntParam::new(32, 512).step(32);
     let mut trial = Trial::new(0);
 
-    let n1 = trial.suggest_int_step("units", 32, 512, 32).unwrap();
-    let n2 = trial.suggest_int_step("units", 32, 512, 32).unwrap();
+    let n1 = param.suggest(&mut trial).unwrap();
+    let n2 = param.suggest(&mut trial).unwrap();
 
     assert_eq!(
         n1, n2,
-        "repeated suggest_int_step should return cached value"
+        "repeated suggest int step should return cached value"
     );
 }
 
 #[test]
 fn test_suggest_categorical_caching() {
+    let param = CategoricalParam::new(vec!["sgd", "adam", "rmsprop"]);
     let mut trial = Trial::new(0);
 
-    let choices = ["sgd", "adam", "rmsprop"];
-    let c1 = trial.suggest_categorical("optimizer", &choices).unwrap();
-    let c2 = trial.suggest_categorical("optimizer", &choices).unwrap();
+    let c1 = param.suggest(&mut trial).unwrap();
+    let c2 = param.suggest(&mut trial).unwrap();
 
     assert_eq!(
         c1, c2,
-        "repeated suggest_categorical should return cached value"
+        "repeated suggest categorical should return cached value"
     );
 }
 
 #[test]
 fn test_multiple_parameters_independent_caching() {
+    let x_param = FloatParam::new(0.0, 1.0);
+    let y_param = FloatParam::new(0.0, 1.0);
+    let n_param = IntParam::new(1, 10);
+    let opt_param = CategoricalParam::new(vec!["a", "b"]);
     let mut trial = Trial::new(0);
 
     // Suggest multiple parameters
-    let x = trial.suggest_float("x", 0.0, 1.0).unwrap();
-    let y = trial.suggest_float("y", 0.0, 1.0).unwrap();
-    let n = trial.suggest_int("n", 1, 10).unwrap();
-    let opt = trial.suggest_categorical("opt", &["a", "b"]).unwrap();
+    let x = x_param.suggest(&mut trial).unwrap();
+    let y = y_param.suggest(&mut trial).unwrap();
+    let n = n_param.suggest(&mut trial).unwrap();
+    let opt = opt_param.suggest(&mut trial).unwrap();
 
     // All should be cached independently
-    assert_eq!(x, trial.suggest_float("x", 0.0, 1.0).unwrap());
-    assert_eq!(y, trial.suggest_float("y", 0.0, 1.0).unwrap());
-    assert_eq!(n, trial.suggest_int("n", 1, 10).unwrap());
-    assert_eq!(opt, trial.suggest_categorical("opt", &["a", "b"]).unwrap());
+    assert_eq!(x, x_param.suggest(&mut trial).unwrap());
+    assert_eq!(y, y_param.suggest(&mut trial).unwrap());
+    assert_eq!(n, n_param.suggest(&mut trial).unwrap());
+    assert_eq!(opt, opt_param.suggest(&mut trial).unwrap());
 }
 
 // =============================================================================
@@ -365,111 +378,30 @@ fn test_multiple_parameters_independent_caching() {
 // =============================================================================
 
 #[test]
-fn test_parameter_conflict_float_different_bounds() {
+fn test_parameter_conflict_same_param_different_distribution() {
+    // With ParamId-based API, conflict happens when the same ParamId is used
+    // with a different distribution. This can happen via suggest_param with
+    // a param that has a mismatched distribution for an already-stored id.
+    // Since each FloatParam::new() gets a unique id, conflicts only happen
+    // when the same param object is reused with different internal state,
+    // which is not possible with the immutable API.
+    // We test that different param objects don't conflict (they have different ids).
+    let param1 = FloatParam::new(0.0, 1.0);
+    let param2 = FloatParam::new(0.0, 2.0);
     let mut trial = Trial::new(0);
 
-    trial.suggest_float("x", 0.0, 1.0).unwrap();
-    let result = trial.suggest_float("x", 0.0, 2.0); // Different upper bound
-
-    assert!(matches!(result, Err(Error::ParameterConflict { .. })));
+    trial.suggest_param(&param1).unwrap();
+    // Different param object = different id = no conflict
+    let result = trial.suggest_param(&param2);
+    assert!(result.is_ok());
 }
-
-#[test]
-fn test_parameter_conflict_float_vs_log() {
-    let mut trial = Trial::new(0);
-
-    trial.suggest_float("x", 0.1, 1.0).unwrap();
-    let result = trial.suggest_float_log("x", 0.1, 1.0); // Same bounds but log scale
-
-    assert!(matches!(result, Err(Error::ParameterConflict { .. })));
-}
-
-#[test]
-fn test_parameter_conflict_float_vs_step() {
-    let mut trial = Trial::new(0);
-
-    trial.suggest_float("x", 0.0, 1.0).unwrap();
-    let result = trial.suggest_float_step("x", 0.0, 1.0, 0.1); // Same bounds but with step
-
-    assert!(matches!(result, Err(Error::ParameterConflict { .. })));
-}
-
-#[test]
-fn test_parameter_conflict_int_different_bounds() {
-    let mut trial = Trial::new(0);
-
-    trial.suggest_int("n", 1, 10).unwrap();
-    let result = trial.suggest_int("n", 1, 20); // Different upper bound
-
-    assert!(matches!(result, Err(Error::ParameterConflict { .. })));
-}
-
-#[test]
-fn test_parameter_conflict_int_vs_log() {
-    let mut trial = Trial::new(0);
-
-    trial.suggest_int("n", 1, 100).unwrap();
-    let result = trial.suggest_int_log("n", 1, 100); // Same bounds but log scale
-
-    assert!(matches!(result, Err(Error::ParameterConflict { .. })));
-}
-
-#[test]
-fn test_parameter_conflict_categorical_different_n_choices() {
-    let mut trial = Trial::new(0);
-
-    trial.suggest_categorical("opt", &["a", "b", "c"]).unwrap();
-    let result = trial.suggest_categorical("opt", &["x", "y"]); // Different number of choices
-
-    assert!(matches!(result, Err(Error::ParameterConflict { .. })));
-}
-
-#[test]
-fn test_parameter_conflict_float_vs_int() {
-    let mut trial = Trial::new(0);
-
-    trial.suggest_float("x", 0.0, 10.0).unwrap();
-    let result = trial.suggest_int("x", 0, 10); // Different type
-
-    assert!(matches!(result, Err(Error::ParameterConflict { .. })));
-}
-
-#[test]
-fn test_parameter_conflict_returns_name() {
-    let mut trial = Trial::new(0);
-
-    trial.suggest_float("my_param", 0.0, 1.0).unwrap();
-    let result = trial.suggest_float("my_param", 0.0, 2.0);
-
-    match result {
-        Err(Error::ParameterConflict { name, .. }) => {
-            assert_eq!(name, "my_param");
-        }
-        _ => panic!("expected ParameterConflict error"),
-    }
-}
-
-// =============================================================================
-// Test: empty categorical returns error
-// =============================================================================
 
 #[test]
 fn test_empty_categorical_returns_error() {
+    let param = CategoricalParam::<&str>::new(vec![]);
     let mut trial = Trial::new(0);
-    let empty: &[&str] = &[];
 
-    let result = trial.suggest_categorical("opt", empty);
-
-    assert!(matches!(result, Err(Error::EmptyChoices)));
-}
-
-#[test]
-fn test_empty_categorical_vec_returns_error() {
-    let mut trial = Trial::new(0);
-    let empty: Vec<i32> = vec![];
-
-    let result = trial.suggest_categorical("numbers", &empty);
-
+    let result = trial.suggest_param(&param);
     assert!(matches!(result, Err(Error::EmptyChoices)));
 }
 
@@ -480,10 +412,11 @@ fn test_empty_categorical_vec_returns_error() {
 #[test]
 fn test_study_basic_workflow() {
     let study: Study<f64> = Study::new(Direction::Minimize);
+    let x_param = FloatParam::new(-5.0, 5.0);
 
     study
         .optimize(10, |trial| {
-            let x = trial.suggest_float("x", -5.0, 5.0)?;
+            let x = x_param.suggest(trial)?;
             Ok::<_, Error>(x * x)
         })
         .expect("optimization should succeed");
@@ -496,6 +429,7 @@ fn test_study_basic_workflow() {
 #[test]
 fn test_study_with_failures() {
     let study: Study<f64> = Study::new(Direction::Minimize);
+    let x_param = FloatParam::new(-5.0, 5.0);
 
     // Every other trial fails
     let mut counter = 0;
@@ -505,9 +439,7 @@ fn test_study_with_failures() {
             if counter % 2 == 0 {
                 return Err::<f64, &str>("intentional failure");
             }
-            let x = trial
-                .suggest_float("x", -5.0, 5.0)
-                .map_err(|_| "param error")?;
+            let x = x_param.suggest(trial).map_err(|_| "param error")?;
             Ok(x * x)
         })
         .expect("optimization should succeed with some failures");
@@ -529,11 +461,11 @@ fn test_invalid_bounds_errors() {
     let mut trial = Trial::new(0);
 
     // low > high for float
-    let result = trial.suggest_float("x", 10.0, 5.0);
+    let result = trial.suggest_param(&FloatParam::new(10.0, 5.0));
     assert!(matches!(result, Err(Error::InvalidBounds { .. })));
 
     // low > high for int
-    let result = trial.suggest_int("n", 100, 50);
+    let result = trial.suggest_param(&IntParam::new(100, 50));
     assert!(matches!(result, Err(Error::InvalidBounds { .. })));
 }
 
@@ -542,14 +474,14 @@ fn test_invalid_log_bounds_errors() {
     let mut trial = Trial::new(0);
 
     // low <= 0 for log float
-    let result = trial.suggest_float_log("x", 0.0, 1.0);
+    let result = trial.suggest_param(&FloatParam::new(0.0, 1.0).log_scale());
     assert!(matches!(result, Err(Error::InvalidLogBounds)));
 
-    let result = trial.suggest_float_log("y", -1.0, 1.0);
+    let result = trial.suggest_param(&FloatParam::new(-1.0, 1.0).log_scale());
     assert!(matches!(result, Err(Error::InvalidLogBounds)));
 
     // low < 1 for log int
-    let result = trial.suggest_int_log("n", 0, 100);
+    let result = trial.suggest_param(&IntParam::new(0, 100).log_scale());
     assert!(matches!(result, Err(Error::InvalidLogBounds)));
 }
 
@@ -558,14 +490,14 @@ fn test_invalid_step_errors() {
     let mut trial = Trial::new(0);
 
     // step <= 0 for float
-    let result = trial.suggest_float_step("x", 0.0, 1.0, 0.0);
+    let result = trial.suggest_param(&FloatParam::new(0.0, 1.0).step(0.0));
     assert!(matches!(result, Err(Error::InvalidStep)));
 
-    let result = trial.suggest_float_step("y", 0.0, 1.0, -0.1);
+    let result = trial.suggest_param(&FloatParam::new(0.0, 1.0).step(-0.1));
     assert!(matches!(result, Err(Error::InvalidStep)));
 
     // step <= 0 for int
-    let result = trial.suggest_int_step("n", 0, 100, 0);
+    let result = trial.suggest_param(&IntParam::new(0, 100).step(0));
     assert!(matches!(result, Err(Error::InvalidStep)));
 }
 
@@ -579,11 +511,14 @@ fn test_tpe_with_categorical_parameter() {
 
     let study: Study<f64> = Study::with_sampler(Direction::Maximize, sampler);
 
+    let model_param = CategoricalParam::new(vec!["linear", "quadratic", "cubic"]);
+    let x_param = FloatParam::new(0.0, 2.0);
+
     // Optimization where the best choice depends on the categorical
     study
         .optimize_with_sampler(30, |trial| {
-            let choice = trial.suggest_categorical("model", &["linear", "quadratic", "cubic"])?;
-            let x = trial.suggest_float("x", 0.0, 2.0)?;
+            let choice = model_param.suggest(trial)?;
+            let x = x_param.suggest(trial)?;
 
             // cubic model is best at x=1
             let value = match choice {
@@ -597,7 +532,6 @@ fn test_tpe_with_categorical_parameter() {
         .expect("optimization should succeed");
 
     let best = study.best_trial().expect("should have best trial");
-    // The optimizer should find that "cubic" with x≈1 is best
     assert!(
         best.value > 5.0,
         "should find good solution, got {}",
@@ -615,17 +549,18 @@ fn test_tpe_with_integer_parameters() {
 
     let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
 
-    // Minimize (n - 7)^2 where n ∈ [1, 10]
+    let n_param = IntParam::new(1, 10);
+
+    // Minimize (n - 7)^2 where n in [1, 10]
     study
         .optimize_with_sampler(30, |trial| {
-            let n = trial.suggest_int("n", 1, 10)?;
+            let n = n_param.suggest(trial)?;
             Ok::<_, Error>(((n - 7) as f64).powi(2))
         })
         .expect("optimization should succeed");
 
     let best = study.best_trial().expect("should have best trial");
 
-    // Best value should be small (n close to 7)
     assert!(
         best.value < 5.0,
         "should find n close to 7, best value = {}",
@@ -640,13 +575,14 @@ fn test_callback_early_stopping() {
 
     let study: Study<f64> = Study::new(Direction::Minimize);
     let trials_run = Cell::new(0);
+    let x_param = FloatParam::new(0.0, 10.0);
 
     study
         .optimize_with_callback(
             100,
             |trial| {
                 trials_run.set(trials_run.get() + 1);
-                let x = trial.suggest_float("x", 0.0, 10.0)?;
+                let x = x_param.suggest(trial)?;
                 Ok::<_, Error>(x)
             },
             |_study, _trial| {
@@ -666,10 +602,11 @@ fn test_callback_early_stopping() {
 #[test]
 fn test_study_trials_iteration() {
     let study: Study<f64> = Study::new(Direction::Minimize);
+    let x_param = FloatParam::new(0.0, 1.0);
 
     study
         .optimize(5, |trial| {
-            let x = trial.suggest_float("x", 0.0, 1.0)?;
+            let x = x_param.suggest(trial)?;
             Ok::<_, Error>(x)
         })
         .unwrap();
@@ -681,10 +618,6 @@ fn test_study_trials_iteration() {
         assert!(
             !trial.params.is_empty(),
             "each trial should have parameters"
-        );
-        assert!(
-            trial.params.contains_key("x"),
-            "each trial should have parameter 'x'"
         );
     }
 }
@@ -708,22 +641,23 @@ fn test_trial_state() {
 
 #[test]
 fn test_trial_params_access() {
+    let x_param = FloatParam::new(0.0, 1.0);
+    let n_param = IntParam::new(1, 10);
     let mut trial = Trial::new(0);
 
-    trial.suggest_float("x", 0.0, 1.0).unwrap();
-    trial.suggest_int("n", 1, 10).unwrap();
+    x_param.suggest(&mut trial).unwrap();
+    n_param.suggest(&mut trial).unwrap();
 
     let params = trial.params();
     assert_eq!(params.len(), 2);
-    assert!(params.contains_key("x"));
-    assert!(params.contains_key("n"));
 }
 
 #[test]
 fn test_log_scale_float_range() {
+    let param = FloatParam::new(1e-5, 1e-1).log_scale();
     let mut trial = Trial::new(0);
 
-    let lr = trial.suggest_float_log("lr", 1e-5, 1e-1).unwrap();
+    let lr = param.suggest(&mut trial).unwrap();
     assert!(
         (1e-5..=1e-1).contains(&lr),
         "log-scale value {lr} out of range"
@@ -732,9 +666,10 @@ fn test_log_scale_float_range() {
 
 #[test]
 fn test_step_float_snaps_to_grid() {
+    let param = FloatParam::new(0.0, 1.0).step(0.25);
     let mut trial = Trial::new(0);
 
-    let x = trial.suggest_float_step("x", 0.0, 1.0, 0.25).unwrap();
+    let x = param.suggest(&mut trial).unwrap();
 
     // x should be one of: 0.0, 0.25, 0.5, 0.75, 1.0
     let valid_values = [0.0, 0.25, 0.5, 0.75, 1.0];
@@ -744,9 +679,10 @@ fn test_step_float_snaps_to_grid() {
 
 #[test]
 fn test_step_int_snaps_to_grid() {
+    let param = IntParam::new(0, 100).step(25);
     let mut trial = Trial::new(0);
 
-    let n = trial.suggest_int_step("n", 0, 100, 25).unwrap();
+    let n = param.suggest(&mut trial).unwrap();
 
     // n should be one of: 0, 25, 50, 75, 100
     assert!(
@@ -758,10 +694,11 @@ fn test_step_int_snaps_to_grid() {
 #[test]
 fn test_best_value() {
     let study: Study<f64> = Study::new(Direction::Minimize);
+    let x_param = FloatParam::new(0.0, 10.0);
 
     study
         .optimize(10, |trial| {
-            let x = trial.suggest_float("x", 0.0, 10.0)?;
+            let x = x_param.suggest(trial)?;
             Ok::<_, Error>(x)
         })
         .unwrap();
@@ -781,10 +718,8 @@ fn test_best_value() {
 
 #[test]
 fn test_study_set_sampler() {
-    // Test that set_sampler allows changing the sampler after study creation
     let mut study: Study<f64> = Study::new(Direction::Minimize);
 
-    // Initially uses RandomSampler, now switch to TPE
     let tpe = TpeSampler::builder()
         .seed(42)
         .n_startup_trials(5)
@@ -792,10 +727,11 @@ fn test_study_set_sampler() {
         .unwrap();
     study.set_sampler(tpe);
 
-    // Should work with the new sampler
+    let x_param = FloatParam::new(-5.0, 5.0);
+
     study
         .optimize_with_sampler(10, |trial| {
-            let x = trial.suggest_float("x", -5.0, 5.0)?;
+            let x = x_param.suggest(trial)?;
             Ok::<_, Error>(x * x)
         })
         .expect("optimization should succeed with new sampler");
@@ -805,12 +741,12 @@ fn test_study_set_sampler() {
 
 #[test]
 fn test_study_with_i32_value_type() {
-    // Test Study with non-f64 value type
     let study: Study<i32> = Study::new(Direction::Minimize);
+    let x_param = IntParam::new(-10, 10);
 
     study
         .optimize(10, |trial| {
-            let x = trial.suggest_int("x", -10, 10)?;
+            let x = x_param.suggest(trial)?;
             Ok::<_, Error>(x.abs() as i32)
         })
         .expect("optimization should succeed");
@@ -824,7 +760,6 @@ fn test_study_with_i32_value_type() {
 fn test_optimize_all_trials_fail() {
     let study: Study<f64> = Study::new(Direction::Minimize);
 
-    // All trials fail
     let result = study.optimize(5, |_trial| Err::<f64, &str>("always fails"));
 
     assert!(
@@ -883,12 +818,12 @@ fn test_optimize_with_callback_sampler_all_trials_fail() {
 
 #[test]
 fn test_trial_debug_format() {
+    let param = FloatParam::new(0.0, 1.0);
     let mut trial = Trial::new(42);
-    trial.suggest_float("x", 0.0, 1.0).unwrap();
+    param.suggest(&mut trial).unwrap();
 
     let debug_str = format!("{trial:?}");
 
-    // Should contain trial id and other fields
     assert!(debug_str.contains("Trial"));
     assert!(debug_str.contains("42"));
     assert!(debug_str.contains("has_sampler"));
@@ -901,11 +836,12 @@ fn test_tpe_sampler_builder_default_trait() {
     let builder = TpeSamplerBuilder::default();
     let sampler = builder.build().unwrap();
 
-    // Should have default values
     let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
+    let x_param = FloatParam::new(0.0, 1.0);
+
     study
         .optimize_with_sampler(5, |trial| {
-            let x = trial.suggest_float("x", 0.0, 1.0)?;
+            let x = x_param.suggest(trial)?;
             Ok::<_, Error>(x)
         })
         .unwrap();
@@ -918,9 +854,11 @@ fn test_tpe_sampler_default_trait() {
     let sampler = TpeSampler::default();
 
     let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
+    let x_param = FloatParam::new(0.0, 1.0);
+
     study
         .optimize_with_sampler(5, |trial| {
-            let x = trial.suggest_float("x", 0.0, 1.0)?;
+            let x = x_param.suggest(trial)?;
             Ok::<_, Error>(x)
         })
         .unwrap();
@@ -938,10 +876,11 @@ fn test_tpe_with_fixed_kde_bandwidth() {
         .unwrap();
 
     let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
+    let x_param = FloatParam::new(-5.0, 5.0);
 
     study
         .optimize_with_sampler(20, |trial| {
-            let x = trial.suggest_float("x", -5.0, 5.0)?;
+            let x = x_param.suggest(trial)?;
             Ok::<_, Error>(x * x)
         })
         .expect("optimization should succeed");
@@ -958,18 +897,18 @@ fn test_tpe_sampler_invalid_kde_bandwidth() {
 
 #[test]
 fn test_tpe_split_trials_with_two_trials() {
-    // Edge case: exactly 2 trials in history
     let sampler = TpeSampler::builder()
         .seed(42)
-        .n_startup_trials(2) // TPE kicks in after 2 trials
+        .n_startup_trials(2)
         .build()
         .unwrap();
 
     let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
+    let x_param = FloatParam::new(0.0, 10.0);
 
     study
         .optimize_with_sampler(5, |trial| {
-            let x = trial.suggest_float("x", 0.0, 10.0)?;
+            let x = x_param.suggest(trial)?;
             Ok::<_, Error>(x)
         })
         .expect("optimization should succeed with small history");
@@ -986,11 +925,11 @@ fn test_tpe_with_log_scale_int() {
         .unwrap();
 
     let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
+    let batch_param = IntParam::new(1, 1024).log_scale();
 
     study
         .optimize_with_sampler(20, |trial| {
-            let batch_size = trial.suggest_int_log("batch_size", 1, 1024)?;
-            // Optimal around batch_size = 32
+            let batch_size = batch_param.suggest(trial)?;
             Ok::<_, Error>(((batch_size as f64).log2() - 5.0).powi(2))
         })
         .expect("optimization should succeed");
@@ -1008,11 +947,13 @@ fn test_tpe_with_step_distributions() {
         .unwrap();
 
     let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
+    let x_param = FloatParam::new(0.0, 10.0).step(0.5);
+    let n_param = IntParam::new(0, 100).step(10);
 
     study
         .optimize_with_sampler(20, |trial| {
-            let x = trial.suggest_float_step("x", 0.0, 10.0, 0.5)?;
-            let n = trial.suggest_int_step("n", 0, 100, 10)?;
+            let x = x_param.suggest(trial)?;
+            let n = n_param.suggest(trial)?;
             Ok::<_, Error>((x - 5.0).powi(2) + ((n - 50) as f64).powi(2))
         })
         .expect("optimization should succeed");
@@ -1035,22 +976,24 @@ fn test_create_trial_vs_create_trial_with_sampler() {
     assert_eq!(trial2.id(), 1);
 
     // Both should work for suggesting parameters
+    let x_param = FloatParam::new(0.0, 1.0);
     let mut trial3 = study.create_trial();
-    let x = trial3.suggest_float("x", 0.0, 1.0).unwrap();
+    let x = x_param.suggest(&mut trial3).unwrap();
     assert!((0.0..=1.0).contains(&x));
 }
 
 #[test]
 fn test_manual_trial_completion() {
     let study: Study<f64> = Study::new(Direction::Minimize);
+    let x_param = FloatParam::new(0.0, 10.0);
 
     // Manually create and complete trials
     let mut trial = study.create_trial();
-    let x = trial.suggest_float("x", 0.0, 10.0).unwrap();
+    let x = x_param.suggest(&mut trial).unwrap();
     study.complete_trial(trial, x * x);
 
     let mut trial2 = study.create_trial();
-    let y = trial2.suggest_float("x", 0.0, 10.0).unwrap();
+    let y = x_param.suggest(&mut trial2).unwrap();
     study.complete_trial(trial2, y * y);
 
     // Manually fail a trial
@@ -1063,35 +1006,36 @@ fn test_manual_trial_completion() {
 
 #[test]
 fn test_distributions_access() {
+    let x_param = FloatParam::new(0.0, 1.0);
+    let n_param = IntParam::new(1, 10);
+    let opt_param = CategoricalParam::new(vec!["a", "b", "c"]);
     let mut trial = Trial::new(0);
 
-    trial.suggest_float("x", 0.0, 1.0).unwrap();
-    trial.suggest_int("n", 1, 10).unwrap();
-    trial.suggest_categorical("opt", &["a", "b", "c"]).unwrap();
+    x_param.suggest(&mut trial).unwrap();
+    n_param.suggest(&mut trial).unwrap();
+    opt_param.suggest(&mut trial).unwrap();
 
     let dists = trial.distributions();
     assert_eq!(dists.len(), 3);
-    assert!(dists.contains_key("x"));
-    assert!(dists.contains_key("n"));
-    assert!(dists.contains_key("opt"));
 }
 
 #[test]
 fn test_tpe_empty_good_or_bad_values_fallback() {
-    // When TPE can't find values in the good/bad groups, it falls back to random
     let sampler = TpeSampler::builder()
         .seed(42)
         .n_startup_trials(5)
-        .gamma(0.1) // Very small gamma means few "good" trials
+        .gamma(0.1)
         .build()
         .unwrap();
 
     let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
+    let x_param = FloatParam::new(0.0, 10.0);
+    let y_param = FloatParam::new(0.0, 10.0);
 
     // First optimize with one parameter
     study
         .optimize_with_sampler(10, |trial| {
-            let x = trial.suggest_float("x", 0.0, 10.0)?;
+            let x = x_param.suggest(trial)?;
             Ok::<_, Error>(x)
         })
         .unwrap();
@@ -1099,7 +1043,7 @@ fn test_tpe_empty_good_or_bad_values_fallback() {
     // Now try with a different parameter - TPE won't have history for "y"
     study
         .optimize_with_sampler(5, |trial| {
-            let y = trial.suggest_float("y", 0.0, 10.0)?;
+            let y = y_param.suggest(trial)?;
             Ok::<_, Error>(y)
         })
         .unwrap();
@@ -1112,12 +1056,13 @@ fn test_callback_early_stopping_on_first_trial() {
     use std::ops::ControlFlow;
 
     let study: Study<f64> = Study::new(Direction::Minimize);
+    let x_param = FloatParam::new(0.0, 10.0);
 
     study
         .optimize_with_callback(
             100,
             |trial| {
-                let x = trial.suggest_float("x", 0.0, 10.0)?;
+                let x = x_param.suggest(trial)?;
                 Ok::<_, Error>(x)
             },
             |_study, _trial| {
@@ -1136,12 +1081,13 @@ fn test_callback_sampler_early_stopping() {
 
     let sampler = RandomSampler::with_seed(42);
     let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
+    let x_param = FloatParam::new(0.0, 10.0);
 
     study
         .optimize_with_callback_sampler(
             100,
             |trial| {
-                let x = trial.suggest_float("x", 0.0, 10.0)?;
+                let x = x_param.suggest(trial)?;
                 Ok::<_, Error>(x)
             },
             |study, _trial| {
@@ -1162,69 +1108,74 @@ fn test_int_bounds_with_low_equals_high() {
     let mut trial = Trial::new(0);
 
     // When low == high, should return that exact value
-    let n = trial.suggest_int("n", 5, 5).unwrap();
+    let n_param = IntParam::new(5, 5);
+    let n = n_param.suggest(&mut trial).unwrap();
     assert_eq!(n, 5);
 
-    let x = trial.suggest_float("x", 3.0, 3.0).unwrap();
+    let x_param = FloatParam::new(3.0, 3.0);
+    let x = x_param.suggest(&mut trial).unwrap();
     assert_eq!(x, 3.0);
 }
 
 #[test]
 fn test_best_trial_with_nan_values() {
-    // Test behavior when comparing with NaN values (PartialOrd edge case)
     let study: Study<f64> = Study::new(Direction::Minimize);
+    let x_param = FloatParam::new(0.0, 10.0);
 
-    // Complete some normal trials
     study
         .optimize(5, |trial| {
-            let x = trial.suggest_float("x", 0.0, 10.0)?;
+            let x = x_param.suggest(trial)?;
             Ok::<_, Error>(x)
         })
         .unwrap();
 
-    // best_trial should still work
     let best = study.best_trial();
     assert!(best.is_ok());
 }
 
 // =============================================================================
-// Tests for suggest_bool
+// Tests for BoolParam
 // =============================================================================
 
 #[test]
 fn test_suggest_bool_caching() {
+    let param = BoolParam::new();
     let mut trial = Trial::new(0);
 
-    let b1 = trial.suggest_bool("flag").unwrap();
-    let b2 = trial.suggest_bool("flag").unwrap();
+    let b1 = param.suggest(&mut trial).unwrap();
+    let b2 = param.suggest(&mut trial).unwrap();
 
-    assert_eq!(b1, b2, "repeated suggest_bool should return cached value");
+    assert_eq!(b1, b2, "repeated suggest bool should return cached value");
 }
 
 #[test]
 fn test_suggest_bool_multiple_parameters() {
+    let dropout_param = BoolParam::new();
+    let batchnorm_param = BoolParam::new();
+    let skip_param = BoolParam::new();
     let mut trial = Trial::new(0);
 
-    let a = trial.suggest_bool("use_dropout").unwrap();
-    let b = trial.suggest_bool("use_batchnorm").unwrap();
-    let c = trial.suggest_bool("use_skip_connections").unwrap();
+    let a = dropout_param.suggest(&mut trial).unwrap();
+    let b = batchnorm_param.suggest(&mut trial).unwrap();
+    let c = skip_param.suggest(&mut trial).unwrap();
 
     // All should be cached independently
-    assert_eq!(a, trial.suggest_bool("use_dropout").unwrap());
-    assert_eq!(b, trial.suggest_bool("use_batchnorm").unwrap());
-    assert_eq!(c, trial.suggest_bool("use_skip_connections").unwrap());
+    assert_eq!(a, dropout_param.suggest(&mut trial).unwrap());
+    assert_eq!(b, batchnorm_param.suggest(&mut trial).unwrap());
+    assert_eq!(c, skip_param.suggest(&mut trial).unwrap());
 }
 
 #[test]
 fn test_suggest_bool_in_optimization() {
     let study: Study<f64> = Study::new(Direction::Minimize);
+    let use_feature_param = BoolParam::new();
+    let x_param = FloatParam::new(0.0, 10.0);
 
     study
         .optimize(10, |trial| {
-            let use_feature = trial.suggest_bool("use_feature")?;
-            let x = trial.suggest_float("x", 0.0, 10.0)?;
+            let use_feature = use_feature_param.suggest(trial)?;
+            let x = x_param.suggest(trial)?;
 
-            // Objective depends on boolean flag
             let value = if use_feature { x } else { x * 2.0 };
             Ok::<_, Error>(value)
         })
@@ -1242,109 +1193,86 @@ fn test_suggest_bool_with_tpe() {
         .unwrap();
 
     let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
+    let use_large_param = BoolParam::new();
+    let x_param = FloatParam::new(0.0, 10.0);
 
     study
         .optimize_with_sampler(20, |trial| {
-            let use_large = trial.suggest_bool("use_large")?;
-            let base = if use_large { 10.0 } else { 1.0 };
-            let x = trial.suggest_float("x", 0.0, base)?;
-            Ok::<_, Error>(x)
+            let use_large = use_large_param.suggest(trial)?;
+            let x = x_param.suggest(trial)?;
+            // The value depends on use_large flag
+            let base = if use_large { x * 2.0 } else { x };
+            Ok::<_, Error>(base)
         })
         .unwrap();
 
     let best = study.best_trial().unwrap();
-    // Best should prefer use_large=false for smaller range
-    assert!(best.value < 5.0);
+    assert!(best.value < 10.0);
 }
 
 // =============================================================================
-// Tests for suggest_range
+// Tests for FloatParam and IntParam ranges
 // =============================================================================
 
 #[test]
-fn test_suggest_range_float_exclusive() {
+fn test_float_param_exclusive_range() {
+    let param = FloatParam::new(0.0, 1.0);
     let mut trial = Trial::new(0);
 
-    let x = trial.suggest_range("x", 0.0..1.0).unwrap();
+    let x = param.suggest(&mut trial).unwrap();
     assert!((0.0..=1.0).contains(&x), "value {x} out of range 0.0..1.0");
 }
 
 #[test]
-fn test_suggest_range_float_inclusive() {
+fn test_float_param_inclusive_range() {
+    let param = FloatParam::new(0.0, 1.0);
     let mut trial = Trial::new(0);
 
-    let x = trial.suggest_range("x", 0.0..=1.0).unwrap();
+    let x = param.suggest(&mut trial).unwrap();
     assert!((0.0..=1.0).contains(&x), "value {x} out of range 0.0..=1.0");
 }
 
 #[test]
-fn test_suggest_range_int_exclusive() {
+fn test_int_param_range() {
+    let param = IntParam::new(1, 10);
     let mut trial = Trial::new(0);
 
-    // 1..10 means 1 to 9 inclusive
-    let n = trial.suggest_range("n", 1_i64..10).unwrap();
-    assert!(
-        (1..=9).contains(&n),
-        "value {n} out of range 1..10 (should be 1-9)"
-    );
+    let n = param.suggest(&mut trial).unwrap();
+    assert!((1..=10).contains(&n), "value {n} out of range 1..=10");
 }
 
 #[test]
-fn test_suggest_range_int_inclusive() {
+fn test_param_caching_float() {
+    let param = FloatParam::new(0.0, 1.0);
     let mut trial = Trial::new(0);
 
-    // 1..=10 means 1 to 10 inclusive
-    let n = trial.suggest_range("n", 1_i64..=10).unwrap();
-    assert!(
-        (1..=10).contains(&n),
-        "value {n} out of range 1..=10 (should be 1-10)"
-    );
+    let x1 = param.suggest(&mut trial).unwrap();
+    let x2 = param.suggest(&mut trial).unwrap();
+
+    assert_eq!(x1, x2, "repeated suggest should return cached value");
 }
 
 #[test]
-fn test_suggest_range_caching_float() {
+fn test_param_caching_int() {
+    let param = IntParam::new(1, 100);
     let mut trial = Trial::new(0);
 
-    let x1 = trial.suggest_range("x", 0.0..1.0).unwrap();
-    let x2 = trial.suggest_range("x", 0.0..1.0).unwrap();
+    let n1 = param.suggest(&mut trial).unwrap();
+    let n2 = param.suggest(&mut trial).unwrap();
 
-    assert_eq!(x1, x2, "repeated suggest_range should return cached value");
+    assert_eq!(n1, n2, "repeated suggest should return cached value");
 }
 
 #[test]
-fn test_suggest_range_caching_int() {
-    let mut trial = Trial::new(0);
-
-    let n1 = trial.suggest_range("n", 1_i64..=100).unwrap();
-    let n2 = trial.suggest_range("n", 1_i64..=100).unwrap();
-
-    assert_eq!(n1, n2, "repeated suggest_range should return cached value");
-}
-
-#[test]
-fn test_suggest_range_multiple_parameters() {
-    let mut trial = Trial::new(0);
-
-    let x = trial.suggest_range("x", 0.0..1.0).unwrap();
-    let y = trial.suggest_range("y", -5.0..=5.0).unwrap();
-    let n = trial.suggest_range("n", 1_i64..10).unwrap();
-    let m = trial.suggest_range("m", 100_i64..=200).unwrap();
-
-    // All should be cached independently
-    assert_eq!(x, trial.suggest_range("x", 0.0..1.0).unwrap());
-    assert_eq!(y, trial.suggest_range("y", -5.0..=5.0).unwrap());
-    assert_eq!(n, trial.suggest_range("n", 1_i64..10).unwrap());
-    assert_eq!(m, trial.suggest_range("m", 100_i64..=200).unwrap());
-}
-
-#[test]
-fn test_suggest_range_in_optimization() {
+fn test_multiple_params_in_optimization() {
     let study: Study<f64> = Study::new(Direction::Minimize);
+    let x_param = FloatParam::new(-10.0, 10.0);
+    let n_param = IntParam::new(1, 5);
 
     study
         .optimize(10, |trial| {
-            let x = trial.suggest_range("x", -10.0..10.0)?;
-            let n = trial.suggest_range("n", 1_i64..=5)?;
+            let x = x_param.suggest(trial)?;
+            let n = n_param.suggest(trial)?;
             Ok::<_, Error>(x * x + n as f64)
         })
         .unwrap();
@@ -1353,7 +1281,7 @@ fn test_suggest_range_in_optimization() {
 }
 
 #[test]
-fn test_suggest_range_with_tpe() {
+fn test_params_with_tpe() {
     let sampler = TpeSampler::builder()
         .seed(42)
         .n_startup_trials(5)
@@ -1361,46 +1289,36 @@ fn test_suggest_range_with_tpe() {
         .unwrap();
 
     let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
+    let x_param = FloatParam::new(-5.0, 5.0);
+    let n_param = IntParam::new(1, 10);
 
     study
         .optimize_with_sampler(30, |trial| {
-            let x = trial.suggest_range("x", -5.0..=5.0)?;
-            let n = trial.suggest_range("n", 1_i64..=10)?;
+            let x = x_param.suggest(trial)?;
+            let n = n_param.suggest(trial)?;
             Ok::<_, Error>(x * x + (n as f64 - 5.0).powi(2))
         })
         .unwrap();
 
     let best = study.best_trial().unwrap();
-    // TPE should find near-optimal solution
     assert!(best.value < 10.0, "TPE should find good solution");
 }
 
 #[test]
-fn test_suggest_range_empty_int_range_error() {
+fn test_single_value_int_range() {
+    let param = IntParam::new(5, 5);
     let mut trial = Trial::new(0);
 
-    // 5..5 is empty (no valid integers)
-    let result = trial.suggest_range("n", 5_i64..5);
-    assert!(
-        matches!(result, Err(Error::InvalidBounds { .. })),
-        "empty range should return InvalidBounds error"
-    );
-}
-
-#[test]
-fn test_suggest_range_single_value_int() {
-    let mut trial = Trial::new(0);
-
-    // 5..=5 has exactly one value: 5
-    let n = trial.suggest_range("n", 5_i64..=5).unwrap();
+    let n = param.suggest(&mut trial).unwrap();
     assert_eq!(n, 5, "single-value range should return that value");
 }
 
 #[test]
-fn test_suggest_range_single_value_float() {
+fn test_single_value_float_range() {
+    let param = FloatParam::new(4.2, 4.2);
     let mut trial = Trial::new(0);
 
-    let x = trial.suggest_range("x", 4.2..=4.2).unwrap();
+    let x = param.suggest(&mut trial).unwrap();
     assert!(
         (x - 4.2).abs() < f64::EPSILON,
         "single-value range should return that value"

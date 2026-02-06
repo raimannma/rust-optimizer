@@ -4,6 +4,7 @@
 
 #![cfg(feature = "async")]
 
+use optimizer::parameter::{FloatParam, Parameter};
 use optimizer::sampler::random::RandomSampler;
 use optimizer::sampler::tpe::TpeSampler;
 use optimizer::{Direction, Error, Study};
@@ -13,10 +14,15 @@ async fn test_optimize_async_basic() {
     let sampler = RandomSampler::with_seed(42);
     let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
 
+    let x_param = FloatParam::new(-10.0, 10.0);
+
     study
-        .optimize_async(10, |mut trial| async move {
-            let x = trial.suggest_float("x", -10.0, 10.0)?;
-            Ok::<_, Error>((trial, x * x))
+        .optimize_async(10, move |mut trial| {
+            let x_param = x_param.clone();
+            async move {
+                let x = x_param.suggest(&mut trial)?;
+                Ok::<_, Error>((trial, x * x))
+            }
         })
         .await
         .expect("async optimization should succeed");
@@ -36,10 +42,15 @@ async fn test_optimize_async_with_sampler() {
 
     let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
 
+    let x_param = FloatParam::new(-5.0, 5.0);
+
     study
-        .optimize_async_with_sampler(15, |mut trial| async move {
-            let x = trial.suggest_float("x", -5.0, 5.0)?;
-            Ok::<_, Error>((trial, x * x))
+        .optimize_async_with_sampler(15, move |mut trial| {
+            let x_param = x_param.clone();
+            async move {
+                let x = x_param.suggest(&mut trial)?;
+                Ok::<_, Error>((trial, x * x))
+            }
         })
         .await
         .expect("async optimization with sampler should succeed");
@@ -54,10 +65,15 @@ async fn test_optimize_parallel() {
     let sampler = RandomSampler::with_seed(42);
     let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
 
+    let x_param = FloatParam::new(-10.0, 10.0);
+
     study
-        .optimize_parallel(20, 4, |mut trial| async move {
-            let x = trial.suggest_float("x", -10.0, 10.0)?;
-            Ok::<_, Error>((trial, x * x))
+        .optimize_parallel(20, 4, move |mut trial| {
+            let x_param = x_param.clone();
+            async move {
+                let x = x_param.suggest(&mut trial)?;
+                Ok::<_, Error>((trial, x * x))
+            }
         })
         .await
         .expect("parallel optimization should succeed");
@@ -75,11 +91,18 @@ async fn test_optimize_parallel_with_sampler() {
 
     let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
 
+    let x_param = FloatParam::new(-5.0, 5.0);
+    let y_param = FloatParam::new(-5.0, 5.0);
+
     study
-        .optimize_parallel_with_sampler(15, 3, |mut trial| async move {
-            let x = trial.suggest_float("x", -5.0, 5.0)?;
-            let y = trial.suggest_float("y", -5.0, 5.0)?;
-            Ok::<_, Error>((trial, x * x + y * y))
+        .optimize_parallel_with_sampler(15, 3, move |mut trial| {
+            let x_param = x_param.clone();
+            let y_param = y_param.clone();
+            async move {
+                let x = x_param.suggest(&mut trial)?;
+                let y = y_param.suggest(&mut trial)?;
+                Ok::<_, Error>((trial, x * x + y * y))
+            }
         })
         .await
         .expect("parallel optimization with sampler should succeed");
@@ -162,12 +185,15 @@ async fn test_optimize_async_partial_failures() {
 
     let counter = std::sync::atomic::AtomicUsize::new(0);
 
+    let x_param = FloatParam::new(0.0, 10.0);
+
     study
-        .optimize_async(10, |mut trial| {
+        .optimize_async(10, move |mut trial| {
             let count = counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let x_param = x_param.clone();
             async move {
                 if count.is_multiple_of(2) {
-                    let x = trial.suggest_float("x", 0.0, 10.0)?;
+                    let x = x_param.suggest(&mut trial)?;
                     Ok::<_, Error>((trial, x))
                 } else {
                     Err(Error::NoCompletedTrials) // Use as error type
@@ -186,11 +212,16 @@ async fn test_optimize_parallel_high_concurrency() {
     let sampler = RandomSampler::with_seed(42);
     let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
 
+    let x_param = FloatParam::new(0.0, 10.0);
+
     // Run with concurrency higher than n_trials
     study
-        .optimize_parallel(5, 10, |mut trial| async move {
-            let x = trial.suggest_float("x", 0.0, 10.0)?;
-            Ok::<_, Error>((trial, x))
+        .optimize_parallel(5, 10, move |mut trial| {
+            let x_param = x_param.clone();
+            async move {
+                let x = x_param.suggest(&mut trial)?;
+                Ok::<_, Error>((trial, x))
+            }
         })
         .await
         .expect("should handle high concurrency");
@@ -203,11 +234,16 @@ async fn test_optimize_parallel_single_concurrency() {
     let sampler = RandomSampler::with_seed(42);
     let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
 
+    let x_param = FloatParam::new(0.0, 10.0);
+
     // Run with concurrency of 1 (sequential)
     study
-        .optimize_parallel(10, 1, |mut trial| async move {
-            let x = trial.suggest_float("x", 0.0, 10.0)?;
-            Ok::<_, Error>((trial, x))
+        .optimize_parallel(10, 1, move |mut trial| {
+            let x_param = x_param.clone();
+            async move {
+                let x = x_param.suggest(&mut trial)?;
+                Ok::<_, Error>((trial, x))
+            }
         })
         .await
         .expect("should work with single concurrency");

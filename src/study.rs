@@ -166,11 +166,13 @@ where
     /// # Examples
     ///
     /// ```
+    /// use optimizer::parameter::{FloatParam, Parameter};
     /// use optimizer::{Direction, Study};
     ///
     /// let study: Study<f64> = Study::new(Direction::Minimize);
+    /// let x_param = FloatParam::new(0.0, 1.0);
     /// let mut trial = study.create_trial();
-    /// let x = trial.suggest_float("x", 0.0, 1.0).unwrap();
+    /// let x = x_param.suggest(&mut trial).unwrap();
     /// let objective_value = x * x;
     /// study.complete_trial(trial, objective_value);
     ///
@@ -182,6 +184,7 @@ where
             trial.id(),
             trial.params().clone(),
             trial.distributions().clone(),
+            trial.param_labels().clone(),
             value,
         );
         self.completed_trials.write().push(completed);
@@ -228,11 +231,13 @@ where
     /// # Examples
     ///
     /// ```
+    /// use optimizer::parameter::{FloatParam, Parameter};
     /// use optimizer::{Direction, Study};
     ///
     /// let study: Study<f64> = Study::new(Direction::Minimize);
+    /// let x_param = FloatParam::new(0.0, 1.0);
     /// let mut trial = study.create_trial();
-    /// let _ = trial.suggest_float("x", 0.0, 1.0);
+    /// let _ = x_param.suggest(&mut trial);
     /// study.complete_trial(trial, 0.5);
     ///
     /// for completed in study.trials() {
@@ -253,13 +258,15 @@ where
     /// # Examples
     ///
     /// ```
+    /// use optimizer::parameter::{FloatParam, Parameter};
     /// use optimizer::{Direction, Study};
     ///
     /// let study: Study<f64> = Study::new(Direction::Minimize);
     /// assert_eq!(study.n_trials(), 0);
     ///
+    /// let x_param = FloatParam::new(0.0, 1.0);
     /// let mut trial = study.create_trial();
-    /// let _ = trial.suggest_float("x", 0.0, 1.0);
+    /// let _ = x_param.suggest(&mut trial);
     /// study.complete_trial(trial, 0.5);
     /// assert_eq!(study.n_trials(), 1);
     /// ```
@@ -280,6 +287,7 @@ where
     /// # Examples
     ///
     /// ```
+    /// use optimizer::parameter::{FloatParam, Parameter};
     /// use optimizer::{Direction, Study};
     ///
     /// let study: Study<f64> = Study::new(Direction::Minimize);
@@ -287,12 +295,14 @@ where
     /// // Error when no trials completed
     /// assert!(study.best_trial().is_err());
     ///
+    /// let x_param = FloatParam::new(0.0, 1.0);
+    ///
     /// let mut trial1 = study.create_trial();
-    /// let _ = trial1.suggest_float("x", 0.0, 1.0);
+    /// let _ = x_param.suggest(&mut trial1);
     /// study.complete_trial(trial1, 0.8);
     ///
     /// let mut trial2 = study.create_trial();
-    /// let _ = trial2.suggest_float("x", 0.0, 1.0);
+    /// let _ = x_param.suggest(&mut trial2);
     /// study.complete_trial(trial2, 0.3);
     ///
     /// let best = study.best_trial().unwrap();
@@ -343,6 +353,7 @@ where
     /// # Examples
     ///
     /// ```
+    /// use optimizer::parameter::{FloatParam, Parameter};
     /// use optimizer::{Direction, Study};
     ///
     /// let study: Study<f64> = Study::new(Direction::Maximize);
@@ -350,12 +361,14 @@ where
     /// // Error when no trials completed
     /// assert!(study.best_value().is_err());
     ///
+    /// let x_param = FloatParam::new(0.0, 1.0);
+    ///
     /// let mut trial1 = study.create_trial();
-    /// let _ = trial1.suggest_float("x", 0.0, 1.0);
+    /// let _ = x_param.suggest(&mut trial1);
     /// study.complete_trial(trial1, 0.3);
     ///
     /// let mut trial2 = study.create_trial();
-    /// let _ = trial2.suggest_float("x", 0.0, 1.0);
+    /// let _ = x_param.suggest(&mut trial2);
     /// study.complete_trial(trial2, 0.8);
     ///
     /// let best = study.best_value().unwrap();
@@ -392,6 +405,7 @@ where
     /// # Examples
     ///
     /// ```
+    /// use optimizer::parameter::{FloatParam, Parameter};
     /// use optimizer::sampler::random::RandomSampler;
     /// use optimizer::{Direction, Study};
     ///
@@ -399,9 +413,11 @@ where
     /// let sampler = RandomSampler::with_seed(42);
     /// let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
     ///
+    /// let x_param = FloatParam::new(-10.0, 10.0);
+    ///
     /// study
     ///     .optimize(10, |trial| {
-    ///         let x = trial.suggest_float("x", -10.0, 10.0)?;
+    ///         let x = x_param.suggest(trial)?;
     ///         Ok::<_, optimizer::Error>(x * x)
     ///     })
     ///     .unwrap();
@@ -460,6 +476,7 @@ where
     /// # Examples
     ///
     /// ```
+    /// use optimizer::parameter::{FloatParam, Parameter};
     /// use optimizer::sampler::random::RandomSampler;
     /// use optimizer::{Direction, Study};
     ///
@@ -469,12 +486,17 @@ where
     /// let sampler = RandomSampler::with_seed(42);
     /// let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
     ///
+    /// let x_param = FloatParam::new(-10.0, 10.0);
+    ///
     /// study
-    ///     .optimize_async(10, |mut trial| async move {
-    ///         let x = trial.suggest_float("x", -10.0, 10.0)?;
-    ///         // Simulate async work (e.g., network request)
-    ///         let value = x * x;
-    ///         Ok::<_, optimizer::Error>((trial, value))
+    ///     .optimize_async(10, |mut trial| {
+    ///         let x_param = x_param.clone();
+    ///         async move {
+    ///             let x = x_param.suggest(&mut trial)?;
+    ///             // Simulate async work (e.g., network request)
+    ///             let value = x * x;
+    ///             Ok::<_, optimizer::Error>((trial, value))
+    ///         }
     ///     })
     ///     .await?;
     ///
@@ -542,6 +564,7 @@ where
     /// # Examples
     ///
     /// ```
+    /// use optimizer::parameter::{FloatParam, Parameter};
     /// use optimizer::sampler::random::RandomSampler;
     /// use optimizer::{Direction, Study};
     ///
@@ -551,12 +574,17 @@ where
     /// let sampler = RandomSampler::with_seed(42);
     /// let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
     ///
+    /// let x_param = FloatParam::new(-10.0, 10.0);
+    ///
     /// study
-    ///     .optimize_parallel(10, 4, |mut trial| async move {
-    ///         let x = trial.suggest_float("x", -10.0, 10.0)?;
-    ///         // Async objective function (e.g., network request)
-    ///         let value = x * x;
-    ///         Ok::<_, optimizer::Error>((trial, value))
+    ///     .optimize_parallel(10, 4, move |mut trial| {
+    ///         let x_param = x_param.clone();
+    ///         async move {
+    ///             let x = x_param.suggest(&mut trial)?;
+    ///             // Async objective function (e.g., network request)
+    ///             let value = x * x;
+    ///             Ok::<_, optimizer::Error>((trial, value))
+    ///         }
     ///     })
     ///     .await?;
     ///
@@ -652,6 +680,7 @@ where
     /// ```
     /// use std::ops::ControlFlow;
     ///
+    /// use optimizer::parameter::{FloatParam, Parameter};
     /// use optimizer::sampler::random::RandomSampler;
     /// use optimizer::{Direction, Study};
     ///
@@ -659,11 +688,13 @@ where
     /// let sampler = RandomSampler::with_seed(42);
     /// let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
     ///
+    /// let x_param = FloatParam::new(-10.0, 10.0);
+    ///
     /// study
     ///     .optimize_with_callback(
     ///         100,
     ///         |trial| {
-    ///             let x = trial.suggest_float("x", -10.0, 10.0)?;
+    ///             let x = x_param.suggest(trial)?;
     ///             Ok::<_, optimizer::Error>(x * x)
     ///         },
     ///         |_study, completed_trial| {
@@ -746,6 +777,7 @@ impl Study<f64> {
     /// # Examples
     ///
     /// ```
+    /// use optimizer::parameter::{FloatParam, Parameter};
     /// use optimizer::sampler::random::RandomSampler;
     /// use optimizer::{Direction, Study};
     ///
@@ -755,7 +787,8 @@ impl Study<f64> {
     /// let mut trial = study.create_trial_with_sampler();
     ///
     /// // Parameter suggestions now use the study's sampler and history
-    /// let x = trial.suggest_float("x", 0.0, 1.0).unwrap();
+    /// let x_param = FloatParam::new(0.0, 1.0);
+    /// let x = x_param.suggest(&mut trial).unwrap();
     /// ```
     pub fn create_trial_with_sampler(&self) -> Trial {
         let id = self.next_trial_id();
@@ -788,6 +821,7 @@ impl Study<f64> {
     /// # Examples
     ///
     /// ```
+    /// use optimizer::parameter::{FloatParam, Parameter};
     /// use optimizer::sampler::random::RandomSampler;
     /// use optimizer::{Direction, Study};
     ///
@@ -795,9 +829,11 @@ impl Study<f64> {
     /// let sampler = RandomSampler::with_seed(42);
     /// let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
     ///
+    /// let x_param = FloatParam::new(-10.0, 10.0);
+    ///
     /// study
     ///     .optimize_with_sampler(10, |trial| {
-    ///         let x = trial.suggest_float("x", -10.0, 10.0)?;
+    ///         let x = x_param.suggest(trial)?;
     ///         Ok::<_, optimizer::Error>(x * x)
     ///     })
     ///     .unwrap();
@@ -859,6 +895,7 @@ impl Study<f64> {
     /// ```
     /// use std::ops::ControlFlow;
     ///
+    /// use optimizer::parameter::{FloatParam, Parameter};
     /// use optimizer::sampler::random::RandomSampler;
     /// use optimizer::{Direction, Study};
     ///
@@ -866,11 +903,13 @@ impl Study<f64> {
     /// let sampler = RandomSampler::with_seed(42);
     /// let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
     ///
+    /// let x_param = FloatParam::new(-10.0, 10.0);
+    ///
     /// study
     ///     .optimize_with_callback_sampler(
     ///         100,
     ///         |trial| {
-    ///             let x = trial.suggest_float("x", -10.0, 10.0)?;
+    ///             let x = x_param.suggest(trial)?;
     ///             Ok::<_, optimizer::Error>(x * x)
     ///         },
     ///         |study, _completed_trial| {
@@ -958,6 +997,7 @@ impl Study<f64> {
     /// # Examples
     ///
     /// ```
+    /// use optimizer::parameter::{FloatParam, Parameter};
     /// use optimizer::sampler::random::RandomSampler;
     /// use optimizer::{Direction, Study};
     ///
@@ -967,12 +1007,17 @@ impl Study<f64> {
     /// let sampler = RandomSampler::with_seed(42);
     /// let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
     ///
+    /// let x_param = FloatParam::new(-10.0, 10.0);
+    ///
     /// study
-    ///     .optimize_async_with_sampler(10, |mut trial| async move {
-    ///         let x = trial.suggest_float("x", -10.0, 10.0)?;
-    ///         // Simulate async work (e.g., network request)
-    ///         let value = x * x;
-    ///         Ok::<_, optimizer::Error>((trial, value))
+    ///     .optimize_async_with_sampler(10, |mut trial| {
+    ///         let x_param = x_param.clone();
+    ///         async move {
+    ///             let x = x_param.suggest(&mut trial)?;
+    ///             // Simulate async work (e.g., network request)
+    ///             let value = x * x;
+    ///             Ok::<_, optimizer::Error>((trial, value))
+    ///         }
     ///     })
     ///     .await?;
     ///
@@ -1040,6 +1085,7 @@ impl Study<f64> {
     /// # Examples
     ///
     /// ```
+    /// use optimizer::parameter::{FloatParam, Parameter};
     /// use optimizer::sampler::random::RandomSampler;
     /// use optimizer::{Direction, Study};
     ///
@@ -1049,12 +1095,17 @@ impl Study<f64> {
     /// let sampler = RandomSampler::with_seed(42);
     /// let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
     ///
+    /// let x_param = FloatParam::new(-10.0, 10.0);
+    ///
     /// study
-    ///     .optimize_parallel_with_sampler(10, 4, |mut trial| async move {
-    ///         let x = trial.suggest_float("x", -10.0, 10.0)?;
-    ///         // Async objective function (e.g., network request)
-    ///         let value = x * x;
-    ///         Ok::<_, optimizer::Error>((trial, value))
+    ///     .optimize_parallel_with_sampler(10, 4, move |mut trial| {
+    ///         let x_param = x_param.clone();
+    ///         async move {
+    ///             let x = x_param.suggest(&mut trial)?;
+    ///             // Async objective function (e.g., network request)
+    ///             let value = x * x;
+    ///             Ok::<_, optimizer::Error>((trial, value))
+    ///         }
     ///     })
     ///     .await?;
     ///

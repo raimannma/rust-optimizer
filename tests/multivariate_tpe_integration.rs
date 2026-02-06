@@ -9,6 +9,7 @@
     clippy::cast_possible_truncation
 )]
 
+use optimizer::parameter::{CategoricalParam, FloatParam, IntParam, Parameter};
 use optimizer::sampler::tpe::{MultivariateTpeSampler, TpeSampler};
 use optimizer::{Direction, Error, Study};
 
@@ -50,10 +51,13 @@ fn test_multivariate_tpe_rosenbrock_finds_good_solution() {
 
     let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
 
+    let x_param = FloatParam::new(-2.0, 2.0);
+    let y_param = FloatParam::new(-2.0, 4.0);
+
     study
         .optimize_with_sampler(100, |trial| {
-            let x = trial.suggest_float("x", -2.0, 2.0)?;
-            let y = trial.suggest_float("y", -2.0, 4.0)?;
+            let x = x_param.suggest(trial)?;
+            let y = y_param.suggest(trial)?;
             Ok::<_, Error>(rosenbrock(x, y))
         })
         .expect("optimization should succeed");
@@ -82,10 +86,13 @@ fn test_independent_tpe_rosenbrock() {
 
     let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
 
+    let x_param = FloatParam::new(-2.0, 2.0);
+    let y_param = FloatParam::new(-2.0, 4.0);
+
     study
         .optimize_with_sampler(100, |trial| {
-            let x = trial.suggest_float("x", -2.0, 2.0)?;
-            let y = trial.suggest_float("y", -2.0, 4.0)?;
+            let x = x_param.suggest(trial)?;
+            let y = y_param.suggest(trial)?;
             Ok::<_, Error>(rosenbrock(x, y))
         })
         .expect("optimization should succeed");
@@ -122,10 +129,13 @@ fn test_multivariate_tpe_outperforms_on_correlated_problem() {
 
         let study: Study<f64> = Study::with_sampler(Direction::Minimize, multivariate_sampler);
 
+        let x_param = FloatParam::new(-2.0, 2.0);
+        let y_param = FloatParam::new(-2.0, 4.0);
+
         study
             .optimize_with_sampler(n_trials, |trial| {
-                let x = trial.suggest_float("x", -2.0, 2.0)?;
-                let y = trial.suggest_float("y", -2.0, 4.0)?;
+                let x = x_param.suggest(trial)?;
+                let y = y_param.suggest(trial)?;
                 Ok::<_, Error>(rosenbrock(x, y))
             })
             .unwrap();
@@ -142,10 +152,13 @@ fn test_multivariate_tpe_outperforms_on_correlated_problem() {
 
         let study: Study<f64> = Study::with_sampler(Direction::Minimize, independent_sampler);
 
+        let x_param = FloatParam::new(-2.0, 2.0);
+        let y_param = FloatParam::new(-2.0, 4.0);
+
         study
             .optimize_with_sampler(n_trials, |trial| {
-                let x = trial.suggest_float("x", -2.0, 2.0)?;
-                let y = trial.suggest_float("y", -2.0, 4.0)?;
+                let x = x_param.suggest(trial)?;
+                let y = y_param.suggest(trial)?;
                 Ok::<_, Error>(rosenbrock(x, y))
             })
             .unwrap();
@@ -201,10 +214,13 @@ fn test_multivariate_tpe_independent_problem() {
 
     let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
 
+    let x_param = FloatParam::new(-5.0, 5.0);
+    let y_param = FloatParam::new(-5.0, 5.0);
+
     study
         .optimize_with_sampler(50, |trial| {
-            let x = trial.suggest_float("x", -5.0, 5.0)?;
-            let y = trial.suggest_float("y", -5.0, 5.0)?;
+            let x = x_param.suggest(trial)?;
+            let y = y_param.suggest(trial)?;
             Ok::<_, Error>(sphere(x, y))
         })
         .expect("optimization should succeed");
@@ -230,10 +246,13 @@ fn test_independent_tpe_independent_problem() {
 
     let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
 
+    let x_param = FloatParam::new(-5.0, 5.0);
+    let y_param = FloatParam::new(-5.0, 5.0);
+
     study
         .optimize_with_sampler(50, |trial| {
-            let x = trial.suggest_float("x", -5.0, 5.0)?;
-            let y = trial.suggest_float("y", -5.0, 5.0)?;
+            let x = x_param.suggest(trial)?;
+            let y = y_param.suggest(trial)?;
             Ok::<_, Error>(sphere(x, y))
         })
         .expect("optimization should succeed");
@@ -267,10 +286,13 @@ fn test_both_samplers_work_on_independent_problem() {
 
         let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
 
+        let x_param = FloatParam::new(-5.0, 5.0);
+        let y_param = FloatParam::new(-5.0, 5.0);
+
         study
             .optimize_with_sampler(n_trials, |trial| {
-                let x = trial.suggest_float("x", -5.0, 5.0)?;
-                let y = trial.suggest_float("y", -5.0, 5.0)?;
+                let x = x_param.suggest(trial)?;
+                let y = y_param.suggest(trial)?;
                 Ok::<_, Error>(sphere(x, y))
             })
             .unwrap();
@@ -286,10 +308,13 @@ fn test_both_samplers_work_on_independent_problem() {
 
         let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
 
+        let x_param = FloatParam::new(-5.0, 5.0);
+        let y_param = FloatParam::new(-5.0, 5.0);
+
         study
             .optimize_with_sampler(n_trials, |trial| {
-                let x = trial.suggest_float("x", -5.0, 5.0)?;
-                let y = trial.suggest_float("y", -5.0, 5.0)?;
+                let x = x_param.suggest(trial)?;
+                let y = y_param.suggest(trial)?;
                 Ok::<_, Error>(sphere(x, y))
             })
             .unwrap();
@@ -331,10 +356,13 @@ fn test_multivariate_tpe_with_group_decomposition() {
 
     let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
 
+    let x_param = FloatParam::new(-5.0, 5.0);
+    let y_param = FloatParam::new(-5.0, 5.0);
+
     study
         .optimize_with_sampler(50, |trial| {
-            let x = trial.suggest_float("x", -5.0, 5.0)?;
-            let y = trial.suggest_float("y", -5.0, 5.0)?;
+            let x = x_param.suggest(trial)?;
+            let y = y_param.suggest(trial)?;
             Ok::<_, Error>(sphere(x, y))
         })
         .expect("optimization should succeed");
@@ -363,11 +391,15 @@ fn test_multivariate_tpe_mixed_parameter_types() {
 
     let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
 
+    let x_param = FloatParam::new(-5.0, 5.0);
+    let n_param = IntParam::new(1, 10);
+    let mode_param = CategoricalParam::new(vec!["a", "b", "c"]);
+
     study
         .optimize_with_sampler(50, |trial| {
-            let x = trial.suggest_float("x", -5.0, 5.0)?;
-            let n = trial.suggest_int("n", 1, 10)?;
-            let mode = trial.suggest_categorical("mode", &["a", "b", "c"])?;
+            let x = x_param.suggest(trial)?;
+            let n = n_param.suggest(trial)?;
+            let mode = mode_param.suggest(trial)?;
 
             // Objective depends on all parameters
             let mode_factor = match mode {

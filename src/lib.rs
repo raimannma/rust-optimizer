@@ -28,6 +28,7 @@
 //! # Quick Start
 //!
 //! ```
+//! use optimizer::parameter::{FloatParam, Parameter};
 //! use optimizer::sampler::tpe::TpeSampler;
 //! use optimizer::{Direction, Study};
 //!
@@ -35,17 +36,23 @@
 //! let sampler = TpeSampler::builder().seed(42).build().unwrap();
 //! let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
 //!
+//! // Define parameter search space
+//! let x_param = FloatParam::new(-10.0, 10.0);
+//!
 //! // Optimize x^2 for 20 trials
 //! study
 //!     .optimize_with_sampler(20, |trial| {
-//!         let x = trial.suggest_float("x", -10.0, 10.0)?;
+//!         let x = x_param.suggest(trial)?;
 //!         Ok::<_, optimizer::Error>(x * x)
 //!     })
 //!     .unwrap();
 //!
 //! // Get the best result
 //! let best = study.best_trial().unwrap();
-//! println!("Best value: {} at x={:?}", best.value, best.params);
+//! println!("Best value: {}", best.value);
+//! for (id, label) in &best.param_labels {
+//!     println!("  {}: {:?}", label, best.params[id]);
+//! }
 //! ```
 //!
 //! # Creating a Study
@@ -69,29 +76,35 @@
 //!
 //! # Suggesting Parameters
 //!
-//! Within the objective function, use [`Trial`] to suggest parameter values:
+//! Within the objective function, use parameter types to suggest values:
 //!
 //! ```
+//! use optimizer::parameter::{BoolParam, CategoricalParam, FloatParam, IntParam, Parameter};
 //! use optimizer::{Direction, Study};
 //!
 //! let study: Study<f64> = Study::new(Direction::Minimize);
 //!
+//! // Define parameter search spaces
+//! let x_param = FloatParam::new(0.0, 1.0);
+//! let lr_param = FloatParam::new(1e-5, 1e-1).log_scale();
+//! let step_param = FloatParam::new(0.0, 1.0).step(0.1);
+//! let n_param = IntParam::new(1, 10);
+//! let batch_param = IntParam::new(16, 256).log_scale();
+//! let units_param = IntParam::new(32, 512).step(32);
+//! let flag_param = BoolParam::new();
+//! let optimizer_param = CategoricalParam::new(vec!["sgd", "adam", "rmsprop"]);
+//!
 //! study
 //!     .optimize(10, |trial| {
-//!         // Float parameters
-//!         let x = trial.suggest_float("x", 0.0, 1.0)?;
-//!         let lr = trial.suggest_float_log("learning_rate", 1e-5, 1e-1)?;
-//!         let step = trial.suggest_float_step("step", 0.0, 1.0, 0.1)?;
+//!         let x = x_param.suggest(trial)?;
+//!         let lr = lr_param.suggest(trial)?;
+//!         let step = step_param.suggest(trial)?;
+//!         let n = n_param.suggest(trial)?;
+//!         let batch = batch_param.suggest(trial)?;
+//!         let units = units_param.suggest(trial)?;
+//!         let flag = flag_param.suggest(trial)?;
+//!         let optimizer = optimizer_param.suggest(trial)?;
 //!
-//!         // Integer parameters
-//!         let n = trial.suggest_int("n_layers", 1, 10)?;
-//!         let batch = trial.suggest_int_log("batch_size", 16, 256)?;
-//!         let units = trial.suggest_int_step("units", 32, 512, 32)?;
-//!
-//!         // Categorical parameters
-//!         let optimizer = trial.suggest_categorical("optimizer", &["sgd", "adam", "rmsprop"])?;
-//!
-//!         // Return objective value
 //!         Ok::<_, optimizer::Error>(x * n as f64)
 //!     })
 //!     .unwrap();
@@ -147,35 +160,51 @@
 //!
 //! ```ignore
 //! use optimizer::{Study, Direction};
+//! use optimizer::parameter::{FloatParam, Parameter};
+//!
+//! let x_param = FloatParam::new(0.0, 1.0);
 //!
 //! // Sequential async
-//! study.optimize_async(10, |mut trial| async move {
-//!     let x = trial.suggest_float("x", 0.0, 1.0)?;
-//!     Ok((trial, x * x))
+//! study.optimize_async(10, |mut trial| {
+//!     let x_param = x_param.clone();
+//!     async move {
+//!         let x = x_param.suggest(&mut trial)?;
+//!         Ok((trial, x * x))
+//!     }
 //! }).await?;
 //!
 //! // Parallel with bounded concurrency
-//! study.optimize_parallel(10, 4, |mut trial| async move {
-//!     let x = trial.suggest_float("x", 0.0, 1.0)?;
-//!     Ok((trial, x * x))
+//! study.optimize_parallel(10, 4, |mut trial| {
+//!     let x_param = x_param.clone();
+//!     async move {
+//!         let x = x_param.suggest(&mut trial)?;
+//!         Ok((trial, x * x))
+//!     }
 //! }).await?;
 //! ```
 //!
 //! # Feature Flags
 //!
 //! - `async`: Enable async optimization methods (requires tokio)
+//! - `derive`: Enable `#[derive(Categorical)]` for enum parameters
 
 mod distribution;
 mod error;
 mod kde;
 mod param;
+pub mod parameter;
 pub mod sampler;
 mod study;
 mod trial;
 mod types;
 
 pub use error::{Error, Result};
+#[cfg(feature = "derive")]
+pub use optimizer_derive::Categorical;
 pub use param::ParamValue;
+pub use parameter::{
+    BoolParam, Categorical, CategoricalParam, EnumParam, FloatParam, IntParam, ParamId, Parameter,
+};
 pub use study::Study;
-pub use trial::{SuggestableRange, Trial};
+pub use trial::Trial;
 pub use types::{Direction, TrialState};

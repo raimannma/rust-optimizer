@@ -23,6 +23,7 @@
 
 use std::ops::ControlFlow;
 
+use optimizer::parameter::{FloatParam, IntParam, Parameter};
 use optimizer::sampler::CompletedTrial;
 use optimizer::sampler::tpe::TpeSampler;
 use optimizer::{Direction, ParamValue, Study, Trial};
@@ -87,34 +88,32 @@ fn evaluate_model(config: &ModelConfig) -> f64 {
 /// The objective function that the optimizer calls for each trial.
 ///
 /// This function:
-/// 1. Uses `trial.suggest_*()` methods to sample hyperparameter values
-/// 2. Builds a model configuration from those values
+/// 1. Uses parameter definitions passed as arguments
+/// 2. Builds a model configuration from the suggested values
 /// 3. Evaluates the model and returns the loss
 ///
 /// The optimizer learns from the results to suggest better parameters
 /// in future trials.
-fn objective(trial: &mut Trial) -> optimizer::Result<f64> {
-    // Sample hyperparameters using different strategies:
-
-    // Log-scale: Good for parameters spanning multiple orders of magnitude
-    // The learning rate might be 0.001, 0.01, or 0.1 - log-scale samples evenly across these
-    let learning_rate = trial.suggest_float_log("learning_rate", 0.001, 0.3)?;
-
-    // Regular integer: Uniformly samples from the range [3, 12]
-    let max_depth = trial.suggest_int("max_depth", 3, 12)?;
-
-    // Stepped integer: Only samples multiples of 50 (50, 100, 150, ..., 500)
-    // Useful when you only want to test specific values
-    let n_estimators = trial.suggest_int_step("n_estimators", 50, 500, 50)?;
-
-    // Regular float: Uniformly samples from [0.5, 1.0]
-    let subsample = trial.suggest_float("subsample", 0.5, 1.0)?;
-    let colsample_bytree = trial.suggest_float("colsample_bytree", 0.5, 1.0)?;
-
-    // More parameters
-    let min_child_weight = trial.suggest_int("min_child_weight", 1, 10)?;
-    let reg_alpha = trial.suggest_float_log("reg_alpha", 1e-3, 10.0)?;
-    let reg_lambda = trial.suggest_float_log("reg_lambda", 1e-3, 10.0)?;
+#[allow(clippy::too_many_arguments)]
+fn objective(
+    trial: &mut Trial,
+    learning_rate_param: &FloatParam,
+    max_depth_param: &IntParam,
+    n_estimators_param: &IntParam,
+    subsample_param: &FloatParam,
+    colsample_bytree_param: &FloatParam,
+    min_child_weight_param: &IntParam,
+    reg_alpha_param: &FloatParam,
+    reg_lambda_param: &FloatParam,
+) -> optimizer::Result<f64> {
+    let learning_rate = learning_rate_param.suggest(trial)?;
+    let max_depth = max_depth_param.suggest(trial)?;
+    let n_estimators = n_estimators_param.suggest(trial)?;
+    let subsample = subsample_param.suggest(trial)?;
+    let colsample_bytree = colsample_bytree_param.suggest(trial)?;
+    let min_child_weight = min_child_weight_param.suggest(trial)?;
+    let reg_alpha = reg_alpha_param.suggest(trial)?;
+    let reg_lambda = reg_lambda_param.suggest(trial)?;
 
     // Build configuration and evaluate
     let config = ModelConfig {
@@ -148,35 +147,16 @@ fn objective(trial: &mut Trial) -> optimizer::Result<f64> {
 /// Return `ControlFlow::Continue(())` to keep optimizing.
 /// Return `ControlFlow::Break(())` to stop early.
 fn on_trial_complete(study: &Study<f64>, trial: &CompletedTrial<f64>) -> ControlFlow<()> {
-    // Helper to extract parameter values
-    let get_float = |name: &str| -> f64 {
-        match trial.params.get(name) {
-            Some(ParamValue::Float(v)) => *v,
-            _ => 0.0,
+    // Print trial number and objective value
+    print!("{:>5} ", study.n_trials());
+    for value in trial.params.values() {
+        match value {
+            ParamValue::Float(v) => print!("{v:>12.5} "),
+            ParamValue::Int(v) => print!("{v:>12} "),
+            ParamValue::Categorical(v) => print!("{v:>12} "),
         }
-    };
-
-    let get_int = |name: &str| -> i64 {
-        match trial.params.get(name) {
-            Some(ParamValue::Int(v)) => *v,
-            _ => 0,
-        }
-    };
-
-    // Print progress
-    println!(
-        "{:>5} {:>10.5} {:>10} {:>12} {:>10.3} {:>12.3} {:>8} {:>10.4} {:>10.4} {:>12.6}",
-        study.n_trials(),
-        get_float("learning_rate"),
-        get_int("max_depth"),
-        get_int("n_estimators"),
-        get_float("subsample"),
-        get_float("colsample_bytree"),
-        get_int("min_child_weight"),
-        get_float("reg_alpha"),
-        get_float("reg_lambda"),
-        trial.value,
-    );
+    }
+    println!("{:>12.6}", trial.value);
 
     // Early stopping: if we find an excellent solution, stop early
     if trial.value < 0.16 {
@@ -218,21 +198,22 @@ fn main() -> optimizer::Result<()> {
     // Print header
     println!("Starting hyperparameter optimization...\n");
     println!(
-        "{:>5} {:>10} {:>10} {:>12} {:>10} {:>12} {:>8} {:>10} {:>10} {:>12}",
-        "Trial",
-        "LR",
-        "MaxDepth",
-        "Estimators",
-        "Subsample",
-        "ColSample",
-        "MinCW",
-        "Alpha",
-        "Lambda",
-        "Loss"
+        "{:>5} {:>12} (parameters...)    {:>12}",
+        "Trial", "Params", "Loss"
     );
-    println!("{}", "-".repeat(110));
+    println!("{}", "-".repeat(60));
 
-    // Step 3: Run optimization
+    // Step 3: Define parameter search spaces
+    let learning_rate_param = FloatParam::new(0.001, 0.3).log_scale();
+    let max_depth_param = IntParam::new(3, 12);
+    let n_estimators_param = IntParam::new(50, 500).step(50);
+    let subsample_param = FloatParam::new(0.5, 1.0);
+    let colsample_bytree_param = FloatParam::new(0.5, 1.0);
+    let min_child_weight_param = IntParam::new(1, 10);
+    let reg_alpha_param = FloatParam::new(1e-3, 10.0).log_scale();
+    let reg_lambda_param = FloatParam::new(1e-3, 10.0).log_scale();
+
+    // Step 4: Run optimization
     //
     // optimize_with_callback_sampler runs the objective function for up to
     // n_trials iterations. After each trial, it calls the callback.
@@ -240,7 +221,23 @@ fn main() -> optimizer::Result<()> {
     // history for informed sampling.
     let n_trials = 50;
 
-    study.optimize_with_callback_sampler(n_trials, objective, on_trial_complete)?;
+    study.optimize_with_callback_sampler(
+        n_trials,
+        |trial| {
+            objective(
+                trial,
+                &learning_rate_param,
+                &max_depth_param,
+                &n_estimators_param,
+                &subsample_param,
+                &colsample_bytree_param,
+                &min_child_weight_param,
+                &reg_alpha_param,
+                &reg_lambda_param,
+            )
+        },
+        on_trial_complete,
+    )?;
 
     // Step 4: Get the best result
     println!("\n{}", "=".repeat(110));
@@ -252,11 +249,15 @@ fn main() -> optimizer::Result<()> {
     println!("  Loss: {:.6}", best.value);
     println!("  Parameters:");
 
-    for (name, value) in &best.params {
+    for (id, value) in &best.params {
+        let label = best
+            .param_labels
+            .get(id)
+            .map_or_else(|| format!("{id}"), |l| l.clone());
         match value {
-            ParamValue::Float(v) => println!("    {name}: {v:.6}"),
-            ParamValue::Int(v) => println!("    {name}: {v}"),
-            ParamValue::Categorical(v) => println!("    {name}: category {v}"),
+            ParamValue::Float(v) => println!("    {label}: {v:.6}"),
+            ParamValue::Int(v) => println!("    {label}: {v}"),
+            ParamValue::Categorical(v) => println!("    {label}: category {v}"),
         }
     }
 

@@ -1,3 +1,6 @@
+[workspace]
+members = ["optimizer-derive"]
+
 [package]
 name = "optimizer"
 version = "0.4.0"
@@ -17,13 +20,16 @@ rand = "0.9"
 thiserror = "2"
 parking_lot = "0.12"
 tokio = { version = "1", features = ["sync", "rt-multi-thread"], optional = true }
+optimizer-derive = { version = "0.1.0", path = "optimizer-derive", optional = true }
 
 [features]
 default = []
 async = ["dep:tokio"]
+derive = ["dep:optimizer-derive"]
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
+optimizer-derive = { version = "0.1.0", path = "optimizer-derive" }
 
 [[example]]
 name = "async_api_optimization"
@@ -33,3 +39,8 @@ required-features = ["async"]
 [[example]]
 name = "ml_hyperparameter_tuning"
 path = "examples/ml_hyperparameter_tuning.rs"
+
+[[example]]
+name = "parameter_api"
+path = "examples/parameter_api.rs"
+required-features = ["derive"]
