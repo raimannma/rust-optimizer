@@ -21,21 +21,31 @@ A Rust library for black-box optimization with multiple sampling strategies.
 ## Quick Start
 
 ```rust
-use optimizer::{Direction, Study};
+use optimizer::parameter::{FloatParam, Parameter};
 use optimizer::sampler::tpe::TpeSampler;
+use optimizer::{Direction, Study};
 
+// Create a study with TPE sampler
 let sampler = TpeSampler::builder().seed(42).build().unwrap();
 let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
 
+// Define parameter search space
+let x_param = FloatParam::new(-10.0, 10.0);
+
+// Optimize x^2 for 20 trials
 study
     .optimize_with_sampler(20, |trial| {
-        let x = trial.suggest_float("x", -10.0, 10.0)?;
+        let x = x_param.suggest(trial)?;
         Ok::<_, optimizer::Error>(x * x)
     })
     .unwrap();
 
+// Get the best result
 let best = study.best_trial().unwrap();
-println!("Best value: {} at x={:?}", best.value, best.params);
+println!("Best value: {}", best.value);
+for (id, label) in &best.param_labels {
+    println!("  {}: {:?}", label, best.params[id]);
+}
 ```
 
 ## Samplers
