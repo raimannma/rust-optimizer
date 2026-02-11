@@ -1732,6 +1732,119 @@ impl<V> Study<V>
 where
     V: PartialOrd + Clone + fmt::Display,
 {
+    /// Export completed trials to CSV format.
+    ///
+    /// Columns: `trial_id`, `value`, `state`, then one column per unique
+    /// parameter label, then one column per unique user-attribute key.
+    ///
+    /// Parameters without labels use a generated name (`param_<id>`).
+    /// Pruned trials have an empty `value` cell.
+    ///
+    /// # Errors
+    ///
+    /// Returns an I/O error if writing fails.
+    pub fn to_csv(&self, mut writer: impl std::io::Write) -> std::io::Result<()> {
+        use std::collections::BTreeMap;
+
+        let trials = self.completed_trials.read();
+
+        // Collect all unique parameter labels (sorted for deterministic column order).
+        let mut param_columns: BTreeMap<ParamId, String> = BTreeMap::new();
+        for trial in trials.iter() {
+            for &id in trial.params.keys() {
+                param_columns.entry(id).or_insert_with(|| {
+                    trial
+                        .param_labels
+                        .get(&id)
+                        .cloned()
+                        .unwrap_or_else(|| id.to_string())
+                });
+            }
+        }
+        // Fill in labels from other trials that might have better labels.
+        for trial in trials.iter() {
+            for (&id, label) in &trial.param_labels {
+                param_columns.entry(id).or_insert_with(|| label.clone());
+            }
+        }
+
+        // Collect all unique attribute keys (sorted).
+        let mut attr_keys: Vec<String> = Vec::new();
+        for trial in trials.iter() {
+            for key in trial.user_attrs.keys() {
+                if !attr_keys.contains(key) {
+                    attr_keys.push(key.clone());
+                }
+            }
+        }
+        attr_keys.sort();
+
+        let param_ids: Vec<ParamId> = param_columns.keys().copied().collect();
+
+        // Write header.
+        write!(writer, "trial_id,value,state")?;
+        for id in &param_ids {
+            write!(writer, ",{}", csv_escape(&param_columns[id]))?;
+        }
+        for key in &attr_keys {
+            write!(writer, ",{}", csv_escape(key))?;
+        }
+        writeln!(writer)?;
+
+        // Write one row per trial.
+        for trial in trials.iter() {
+            write!(writer, "{}", trial.id)?;
+
+            // Value: empty for pruned trials.
+            if trial.state == TrialState::Complete {
+                write!(writer, ",{}", trial.value)?;
+            } else {
+                write!(writer, ",")?;
+            }
+
+            write!(
+                writer,
+                ",{}",
+                match trial.state {
+                    TrialState::Complete => "Complete",
+                    TrialState::Pruned => "Pruned",
+                    TrialState::Failed => "Failed",
+                    TrialState::Running => "Running",
+                }
+            )?;
+
+            for id in &param_ids {
+                if let Some(pv) = trial.params.get(id) {
+                    write!(writer, ",{pv}")?;
+                } else {
+                    write!(writer, ",")?;
+                }
+            }
+
+            for key in &attr_keys {
+                if let Some(attr) = trial.user_attrs.get(key) {
+                    write!(writer, ",{}", csv_escape(&format_attr(attr)))?;
+                } else {
+                    write!(writer, ",")?;
+                }
+            }
+
+            writeln!(writer)?;
+        }
+
+        Ok(())
+    }
+
+    /// Export completed trials to a CSV file.
+    ///
+    /// # Errors
+    ///
+    /// Returns an I/O error if the file cannot be created or written.
+    pub fn export_csv(&self, path: impl AsRef<std::path::Path>) -> std::io::Result<()> {
+        let file = std::fs::File::create(path)?;
+        self.to_csv(std::io::BufWriter::new(file))
+    }
+
     /// Returns a human-readable summary of the study.
     ///
     /// The summary includes:
@@ -2073,6 +2186,19 @@ pub struct StudySnapshot<V> {
 
 #[cfg(feature = "serde")]
 impl<V: PartialOrd + Clone + serde::Serialize> Study<V> {
+    /// Export trials as a pretty-printed JSON array to a file.
+    ///
+    /// Each element in the array is a serialized [`CompletedTrial`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an I/O error if the file cannot be created or written.
+    pub fn export_json(&self, path: impl AsRef<std::path::Path>) -> std::io::Result<()> {
+        let file = std::fs::File::create(path)?;
+        let trials = self.trials();
+        serde_json::to_writer_pretty(file, &trials).map_err(std::io::Error::other)
+    }
+
     /// Saves the study state to a JSON file.
     ///
     /// # Errors
@@ -2169,5 +2295,26 @@ fn is_trial_pruned<E: 'static>(e: &E) -> bool {
         matches!(err, crate::Error::TrialPruned)
     } else {
         any.downcast_ref::<crate::error::TrialPruned>().is_some()
+    }
+}
+
+/// Escape a string for CSV output. If the value contains a comma, quote, or
+/// newline, wrap it in double-quotes and double any embedded quotes.
+fn csv_escape(s: &str) -> String {
+    if s.contains(',') || s.contains('"') || s.contains('\n') {
+        format!("\"{}\"", s.replace('"', "\"\""))
+    } else {
+        s.to_string()
+    }
+}
+
+/// Format an `AttrValue` as a string for CSV cells.
+fn format_attr(attr: &crate::trial::AttrValue) -> String {
+    use crate::trial::AttrValue;
+    match attr {
+        AttrValue::Float(v) => v.to_string(),
+        AttrValue::Int(v) => v.to_string(),
+        AttrValue::String(v) => v.clone(),
+        AttrValue::Bool(v) => v.to_string(),
     }
 }
