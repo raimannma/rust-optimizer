@@ -18,6 +18,7 @@
 //! - **TPE (Tree-Parzen Estimator)** - Bayesian optimization for efficient search
 //! - **Grid Search** - Exhaustive search over a specified parameter grid
 //! - **Sobol (QMC)** - Quasi-random sampling for better space coverage (requires `sobol` feature)
+//! - **CMA-ES** - Covariance Matrix Adaptation Evolution Strategy for continuous optimization (requires `cma-es` feature)
 //!
 //! Additional features include:
 //!
@@ -185,6 +186,7 @@
 //! - `derive`: Enable `#[derive(Categorical)]` for enum parameters
 //! - `serde`: Enable `Serialize`/`Deserialize` on public types and `Study::save()`/`Study::load()`
 //! - `sobol`: Enable the Sobol quasi-random sampler for better space coverage
+//! - `cma-es`: Enable the CMA-ES sampler for continuous optimization
 //! - `tracing`: Emit structured log events via the [`tracing`](https://docs.rs/tracing) crate at key optimization points
 
 /// Emit a `tracing::info!` event when the `tracing` feature is enabled.
@@ -234,6 +236,8 @@ pub use pruner::{
     SuccessiveHalvingPruner, ThresholdPruner, WilcoxonPruner,
 };
 pub use sampler::CompletedTrial;
+#[cfg(feature = "cma-es")]
+pub use sampler::cma_es::CmaEsSampler;
 pub use sampler::grid::GridSearchSampler;
 pub use sampler::random::RandomSampler;
 #[cfg(feature = "sobol")]
@@ -264,6 +268,8 @@ pub mod prelude {
         SuccessiveHalvingPruner, ThresholdPruner,
     };
     pub use crate::sampler::CompletedTrial;
+    #[cfg(feature = "cma-es")]
+    pub use crate::sampler::cma_es::CmaEsSampler;
     pub use crate::sampler::grid::GridSearchSampler;
     pub use crate::sampler::random::RandomSampler;
     #[cfg(feature = "sobol")]

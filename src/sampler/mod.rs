@@ -1,5 +1,7 @@
 //! Sampler trait and implementations for parameter sampling.
 
+#[cfg(feature = "cma-es")]
+pub mod cma_es;
 pub mod grid;
 pub mod random;
 #[cfg(feature = "sobol")]
