@@ -27,6 +27,7 @@ tracing = { version = "0.1.29", optional = true }
 sobol_burley = { version = "0.5", optional = true }
 nalgebra = { version = "0.34", optional = true }
 fs2 = { version = "0.4", optional = true }
+rusqlite = { version = "0.38", features = ["bundled"], optional = true }
 
 [features]
 default = []
@@ -34,6 +35,7 @@ async = ["dep:tokio"]
 derive = ["dep:optimizer-derive"]
 serde = ["dep:serde", "dep:serde_json"]
 journal = ["dep:fs2", "serde"]
+sqlite = ["dep:rusqlite", "serde"]
 tracing = ["dep:tracing"]
 sobol = ["dep:sobol_burley"]
 cma-es = ["dep:nalgebra"]
@@ -74,3 +76,7 @@ path = "examples/visualization_demo.rs"
 [[test]]
 name = "journal_tests"
 required-features = ["journal"]
+
+[[test]]
+name = "sqlite_tests"
+required-features = ["sqlite"]

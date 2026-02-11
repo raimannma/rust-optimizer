@@ -95,7 +95,7 @@ pub enum Error {
     TaskError(String),
 
     /// Returned when a storage operation fails.
-    #[cfg(feature = "journal")]
+    #[cfg(any(feature = "journal", feature = "sqlite"))]
     #[error("storage error: {0}")]
     Storage(String),
 }

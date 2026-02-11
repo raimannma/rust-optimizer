@@ -2355,6 +2355,34 @@ where
     }
 }
 
+#[cfg(feature = "sqlite")]
+impl<V> Study<V>
+where
+    V: PartialOrd + Send + Sync + serde::Serialize + serde::de::DeserializeOwned + 'static,
+{
+    /// Creates a study backed by a `SQLite` database.
+    ///
+    /// Any existing trials in the database are loaded into memory and
+    /// the trial ID counter is set to one past the highest stored ID.
+    /// New trials are written through to the database on completion.
+    ///
+    /// Uses WAL mode for concurrent readers, making it suitable for
+    /// single-machine multi-process optimization.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`Storage`](crate::Error::Storage) error if the
+    /// database cannot be opened.
+    pub fn with_sqlite(
+        direction: Direction,
+        sampler: impl Sampler + 'static,
+        path: impl AsRef<std::path::Path>,
+    ) -> crate::Result<Self> {
+        let storage = crate::storage::SqliteStorage::<V>::new(path)?;
+        Ok(Self::with_sampler_and_storage(direction, sampler, storage))
+    }
+}
+
 impl Study<f64> {
     /// Generates an HTML report with interactive Plotly.js charts.
     ///
