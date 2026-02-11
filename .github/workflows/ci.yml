@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: write
 
 env:
   CARGO_TERM_COLOR: always
@@ -73,6 +74,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Run sync example (ml_hyperparameter_tuning)
         run: cargo run --example ml_hyperparameter_tuning
+      - name: Run sync example (benchmark_convergence)
+        run: cargo run --example benchmark_convergence
+      - name: Run derive example (parameter_api)
+        run: cargo run --example parameter_api --features derive
       - name: Run async example (async_api_optimization)
         run: cargo run --example async_api_optimization --features async
 
@@ -249,6 +254,99 @@ jobs:
           tool: typos-cli
       - name: Typos Check
         run: typos src/
+
+  bench-check:
+    name: Benchmark Smoke Test
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install Rust
+        run: |
+          rustup override set stable
+          rustup update stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Run benchmarks (smoke test)
+        run: cargo bench --all-features --bench samplers --bench optimization
+
+  bench-compare:
+    name: Benchmark Comparison
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install Rust
+        run: |
+          rustup override set stable
+          rustup update stable
+
+      - name: Install critcmp
+        run: cargo install critcmp
+
+      # --- Run benchmarks on the BASE (target) branch ---
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          clean: false
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: bench-base
+
+      - name: Bench baseline
+        run: cargo bench --all-features --bench samplers --bench optimization -- --save-baseline base
+
+      # --- Run benchmarks on the HEAD (PR) branch ---
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          clean: false
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: bench-head
+
+      - name: Bench PR head
+        run: cargo bench --all-features --bench samplers --bench optimization -- --save-baseline head
+
+      # --- Compare and post comment ---
+      - name: Compare benchmarks
+        id: compare
+        run: |
+          EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
+          echo "result<<$EOF" >> "$GITHUB_OUTPUT"
+          critcmp base head --color never >> "$GITHUB_OUTPUT"
+          echo "$EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Find existing comment
+        uses: peter-evans/find-comment@v4
+        id: find-comment
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-author: github-actions[bot]
+          body-includes: "## Benchmark Comparison"
+
+      - name: Post or update PR comment
+        uses: peter-evans/create-or-update-comment@v5
+        with:
+          comment-id: ${{ steps.find-comment.outputs.comment-id }}
+          issue-number: ${{ github.event.pull_request.number }}
+          edit-mode: replace
+          body: |
+            ## Benchmark Comparison
+
+            **Base:** `${{ github.event.pull_request.base.sha }}` | **Head:** `${{ github.event.pull_request.head.sha }}`
+
+            <details>
+            <summary>Click to expand full results</summary>
+
+            ```
+            ${{ steps.compare.outputs.result }}
+            ```
+
+            </details>
+
+            > Benchmarks run on `ubuntu-latest` via [Criterion](https://github.com/bheisler/criterion.rs) + [critcmp](https://github.com/BurntSushi/critcmp).
+            > Results may vary due to shared CI runners. Look for consistent >5% changes.
 
   publish:
     name: Publish to crates.io
