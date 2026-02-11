@@ -2154,6 +2154,22 @@ impl Study<f64> {
     }
 }
 
+#[cfg(feature = "visualization")]
+impl Study<f64> {
+    /// Generates an HTML report with interactive Plotly.js charts.
+    ///
+    /// Creates a self-contained HTML file that can be opened in any browser.
+    /// See [`generate_html_report`](crate::visualization::generate_html_report)
+    /// for details on the included charts.
+    ///
+    /// # Errors
+    ///
+    /// Returns an I/O error if the file cannot be created or written.
+    pub fn export_html(&self, path: impl AsRef<std::path::Path>) -> std::io::Result<()> {
+        crate::visualization::generate_html_report(self, path)
+    }
+}
+
 /// A serializable snapshot of a study's state.
 ///
 /// Since [`Study`] contains non-serializable fields (samplers, atomics, etc.),

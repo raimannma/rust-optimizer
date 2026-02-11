@@ -35,6 +35,7 @@ serde = ["dep:serde", "dep:serde_json"]
 tracing = ["dep:tracing"]
 sobol = ["dep:sobol_burley"]
 cma-es = ["dep:nalgebra"]
+visualization = []
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
@@ -63,3 +64,8 @@ path = "examples/ml_hyperparameter_tuning.rs"
 name = "parameter_api"
 path = "examples/parameter_api.rs"
 required-features = ["derive"]
+
+[[example]]
+name = "visualization_demo"
+path = "examples/visualization_demo.rs"
+required-features = ["visualization"]

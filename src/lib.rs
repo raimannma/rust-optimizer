@@ -190,6 +190,7 @@
 //! - `serde`: Enable `Serialize`/`Deserialize` on public types and `Study::save()`/`Study::load()`
 //! - `sobol`: Enable the Sobol quasi-random sampler for better space coverage
 //! - `cma-es`: Enable the CMA-ES sampler for continuous optimization
+//! - `visualization`: Generate self-contained HTML reports with interactive Plotly.js charts
 //! - `tracing`: Emit structured log events via the [`tracing`](https://docs.rs/tracing) crate at key optimization points
 
 /// Emit a `tracing::info!` event when the `tracing` feature is enabled.
@@ -229,6 +230,8 @@ pub mod sampler;
 mod study;
 mod trial;
 mod types;
+#[cfg(feature = "visualization")]
+mod visualization;
 
 pub use error::{Error, Result, TrialPruned};
 pub use multi_objective::{MultiObjectiveSampler, MultiObjectiveStudy, MultiObjectiveTrial};
@@ -258,6 +261,8 @@ pub use study::Study;
 pub use study::StudySnapshot;
 pub use trial::{AttrValue, Trial};
 pub use types::{Direction, TrialState};
+#[cfg(feature = "visualization")]
+pub use visualization::generate_html_report;
 
 /// Convenient wildcard import for the most common types.
 ///
@@ -294,4 +299,6 @@ pub mod prelude {
     pub use crate::study::StudySnapshot;
     pub use crate::trial::{AttrValue, Trial};
     pub use crate::types::Direction;
+    #[cfg(feature = "visualization")]
+    pub use crate::visualization::generate_html_report;
 }
