@@ -591,6 +591,37 @@ where
         self.best_trial().map(|trial| trial.value)
     }
 
+    /// Returns the top `n` trials sorted by objective value.
+    ///
+    /// For `Direction::Minimize`, returns trials with the lowest values.
+    /// For `Direction::Maximize`, returns trials with the highest values.
+    /// Only includes completed trials (not failed or pruned).
+    ///
+    /// If fewer than `n` completed trials exist, returns all of them.
+    pub fn top_trials(&self, n: usize) -> Vec<CompletedTrial<V>>
+    where
+        V: Clone,
+    {
+        let trials = self.completed_trials.read();
+        let mut completed: Vec<_> = trials
+            .iter()
+            .filter(|t| t.state == TrialState::Complete)
+            .cloned()
+            .collect();
+        completed.sort_by(|a, b| match self.direction {
+            Direction::Minimize => a
+                .value
+                .partial_cmp(&b.value)
+                .unwrap_or(core::cmp::Ordering::Equal),
+            Direction::Maximize => b
+                .value
+                .partial_cmp(&a.value)
+                .unwrap_or(core::cmp::Ordering::Equal),
+        });
+        completed.truncate(n);
+        completed
+    }
+
     /// Runs optimization with the given objective function.
     ///
     /// This method runs `n_trials` evaluations sequentially. For each trial:
