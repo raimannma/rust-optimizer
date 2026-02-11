@@ -398,6 +398,58 @@ where
         // They could be stored in a separate list for debugging if needed
     }
 
+    /// Request a new trial with suggested parameters.
+    ///
+    /// This is the first half of the ask-and-tell interface. After calling
+    /// `ask()`, use parameter types to suggest values on the returned trial,
+    /// evaluate your objective externally, then pass the trial back to
+    /// [`tell()`](Self::tell) with the result.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use optimizer::parameter::{FloatParam, Parameter};
+    /// use optimizer::{Direction, Study};
+    ///
+    /// let study: Study<f64> = Study::new(Direction::Minimize);
+    /// let x = FloatParam::new(0.0, 10.0);
+    ///
+    /// let mut trial = study.ask();
+    /// let x_val = x.suggest(&mut trial).unwrap();
+    /// let value = x_val * x_val;
+    /// study.tell(trial, Ok::<_, &str>(value));
+    /// ```
+    pub fn ask(&self) -> Trial {
+        self.create_trial()
+    }
+
+    /// Report the result of a trial obtained from [`ask()`](Self::ask).
+    ///
+    /// Pass `Ok(value)` for a successful evaluation or `Err(reason)` for a
+    /// failure. Failed trials are not stored in the study's history.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use optimizer::{Direction, Study};
+    ///
+    /// let study: Study<f64> = Study::new(Direction::Minimize);
+    ///
+    /// let trial = study.ask();
+    /// study.tell(trial, Ok::<_, &str>(42.0));
+    /// assert_eq!(study.n_trials(), 1);
+    ///
+    /// let trial = study.ask();
+    /// study.tell(trial, Err::<f64, _>("evaluation failed"));
+    /// assert_eq!(study.n_trials(), 1); // failed trials not counted
+    /// ```
+    pub fn tell(&self, trial: Trial, value: core::result::Result<V, impl ToString>) {
+        match value {
+            Ok(v) => self.complete_trial(trial, v),
+            Err(e) => self.fail_trial(trial, e),
+        }
+    }
+
     /// Records a pruned trial, preserving its intermediate values.
     ///
     /// Pruned trials are stored alongside completed trials so that samplers
