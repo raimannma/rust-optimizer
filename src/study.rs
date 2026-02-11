@@ -6,11 +6,14 @@ use core::future::Future;
 use core::ops::ControlFlow;
 use core::sync::atomic::{AtomicU64, Ordering};
 use core::time::Duration;
+use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::Instant;
 
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 
+use crate::param::ParamValue;
+use crate::parameter::ParamId;
 use crate::pruner::{NopPruner, Pruner};
 use crate::sampler::random::RandomSampler;
 use crate::sampler::{CompletedTrial, Sampler};
@@ -53,6 +56,8 @@ where
     /// Set automatically for `Study<f64>` so that `create_trial()` and all
     /// optimization methods use the sampler without requiring `_with_sampler` suffixes.
     trial_factory: Option<Arc<dyn Fn(u64) -> Trial + Send + Sync>>,
+    /// Queue of parameter configurations to evaluate next.
+    enqueued_params: Arc<Mutex<VecDeque<HashMap<ParamId, ParamValue>>>>,
 }
 
 impl<V> Study<V>
@@ -170,6 +175,7 @@ where
             completed_trials,
             next_trial_id: AtomicU64::new(0),
             trial_factory,
+            enqueued_params: Arc::new(Mutex::new(VecDeque::new())),
         }
     }
 
@@ -261,6 +267,7 @@ where
             completed_trials,
             next_trial_id: AtomicU64::new(0),
             trial_factory,
+            enqueued_params: Arc::new(Mutex::new(VecDeque::new())),
         }
     }
 
@@ -292,6 +299,52 @@ where
         &*self.pruner
     }
 
+    /// Enqueues a specific parameter configuration to be evaluated next.
+    ///
+    /// The next call to [`ask()`](Self::ask) or the next trial in [`optimize()`](Self::optimize)
+    /// will use these exact parameters instead of sampling from the sampler.
+    ///
+    /// Multiple configurations can be enqueued; they are evaluated in FIFO order.
+    /// If an enqueued configuration is missing a parameter that the objective calls
+    /// `suggest()` on, that parameter falls back to normal sampling.
+    ///
+    /// # Arguments
+    ///
+    /// * `params` - A map from parameter IDs to the values to use.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::collections::HashMap;
+    ///
+    /// use optimizer::parameter::{FloatParam, IntParam, Parameter};
+    /// use optimizer::{Direction, ParamValue, Study};
+    ///
+    /// let study: Study<f64> = Study::new(Direction::Minimize);
+    /// let x = FloatParam::new(0.0, 10.0);
+    /// let y = IntParam::new(1, 100);
+    ///
+    /// // Evaluate these specific configurations first
+    /// study.enqueue(HashMap::from([
+    ///     (x.id(), ParamValue::Float(0.001)),
+    ///     (y.id(), ParamValue::Int(3)),
+    /// ]));
+    ///
+    /// // Next trial will use x=0.001, y=3
+    /// let mut trial = study.ask();
+    /// assert_eq!(x.suggest(&mut trial).unwrap(), 0.001);
+    /// assert_eq!(y.suggest(&mut trial).unwrap(), 3);
+    /// ```
+    pub fn enqueue(&self, params: HashMap<ParamId, ParamValue>) {
+        self.enqueued_params.lock().push_back(params);
+    }
+
+    /// Returns the number of enqueued parameter configurations.
+    #[must_use]
+    pub fn n_enqueued(&self) -> usize {
+        self.enqueued_params.lock().len()
+    }
+
     /// Generates the next unique trial ID.
     pub(crate) fn next_trial_id(&self) -> u64 {
         self.next_trial_id.fetch_add(1, Ordering::SeqCst)
@@ -321,11 +374,18 @@ where
     /// ```
     pub fn create_trial(&self) -> Trial {
         let id = self.next_trial_id();
-        if let Some(factory) = &self.trial_factory {
+        let mut trial = if let Some(factory) = &self.trial_factory {
             factory(id)
         } else {
             Trial::new(id)
+        };
+
+        // If there are enqueued params, inject them into this trial
+        if let Some(fixed_params) = self.enqueued_params.lock().pop_front() {
+            trial.set_fixed_params(fixed_params);
         }
+
+        trial
     }
 
     /// Records a completed trial with its objective value.

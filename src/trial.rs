@@ -86,6 +86,8 @@ pub struct Trial {
     pruner: Option<Arc<dyn Pruner>>,
     /// User-defined attributes for logging, debugging, and analysis.
     user_attrs: HashMap<String, AttrValue>,
+    /// Pre-filled parameter values from enqueue (used instead of sampling).
+    fixed_params: HashMap<ParamId, ParamValue>,
 }
 
 impl core::fmt::Debug for Trial {
@@ -101,6 +103,7 @@ impl core::fmt::Debug for Trial {
             .field("intermediate_values", &self.intermediate_values)
             .field("has_pruner", &self.pruner.is_some())
             .field("user_attrs", &self.user_attrs)
+            .field("fixed_params", &self.fixed_params)
             .finish()
     }
 }
@@ -139,6 +142,7 @@ impl Trial {
             intermediate_values: Vec::new(),
             pruner: None,
             user_attrs: HashMap::new(),
+            fixed_params: HashMap::new(),
         }
     }
 
@@ -169,7 +173,16 @@ impl Trial {
             intermediate_values: Vec::new(),
             pruner: Some(pruner),
             user_attrs: HashMap::new(),
+            fixed_params: HashMap::new(),
         }
+    }
+
+    /// Sets pre-filled parameters on this trial.
+    ///
+    /// When `suggest_param` is called for a parameter that has a fixed value,
+    /// the fixed value is used instead of sampling.
+    pub(crate) fn set_fixed_params(&mut self, params: HashMap<ParamId, ParamValue>) {
+        self.fixed_params = params;
     }
 
     /// Samples a value from the given distribution using the sampler.
@@ -343,8 +356,14 @@ impl Trial {
             });
         }
 
-        // Sample using the sampler
-        let value = self.sample_value(&distribution);
+        // Check for a pre-filled (enqueued) value for this parameter
+        let value = if let Some(fixed_value) = self.fixed_params.remove(&param_id) {
+            fixed_value
+        } else {
+            // Sample using the sampler
+            self.sample_value(&distribution)
+        };
+
         let result = param.cast_param_value(&value)?;
 
         // Store distribution, value, and label
