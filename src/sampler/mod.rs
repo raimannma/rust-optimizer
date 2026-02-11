@@ -3,6 +3,7 @@
 pub mod bohb;
 #[cfg(feature = "cma-es")]
 pub mod cma_es;
+pub mod de;
 #[cfg(feature = "gp")]
 pub mod gp;
 pub mod grid;

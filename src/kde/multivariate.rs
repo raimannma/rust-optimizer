@@ -5,8 +5,6 @@
 //! parameter independently, the multivariate KDE models the joint distribution
 //! to better capture correlations between parameters.
 
-use rand::{Rng, RngExt};
-
 use crate::error::{Error, Result};
 
 /// A multivariate Gaussian kernel density estimator for joint distributions.
@@ -308,9 +306,9 @@ impl MultivariateKDE {
     /// # Returns
     ///
     /// A `Vec<f64>` of length `n_dims` representing a sample from the KDE.
-    pub(crate) fn sample<R: Rng>(&self, rng: &mut R) -> Vec<f64> {
+    pub(crate) fn sample(&self, rng: &mut fastrand::Rng) -> Vec<f64> {
         // Select a random sample to center the kernel on
-        let idx = rng.random_range(0..self.samples.len());
+        let idx = rng.usize(0..self.samples.len());
         let center = &self.samples[idx];
 
         // Add independent Gaussian noise to each dimension
@@ -319,8 +317,8 @@ impl MultivariateKDE {
             .iter()
             .zip(self.bandwidths.iter())
             .map(|(&center_j, &bandwidth_j)| {
-                let u1: f64 = rng.random();
-                let u2: f64 = rng.random();
+                let u1: f64 = rng.f64();
+                let u2: f64 = rng.f64();
 
                 // Box-Muller transform: generates standard normal variate
                 let z = (-2.0 * u1.ln()).sqrt() * (2.0 * core::f64::consts::PI * u2).cos();
@@ -724,7 +722,7 @@ mod tests {
     fn test_multivariate_kde_sample_basic() {
         let samples = vec![vec![0.0, 0.0], vec![1.0, 1.0], vec![2.0, 2.0]];
         let kde = MultivariateKDE::new(samples).unwrap();
-        let mut rng = rand::rng();
+        let mut rng = fastrand::Rng::new();
 
         // Sample should have correct dimensionality
         let sample = kde.sample(&mut rng);
@@ -741,7 +739,7 @@ mod tests {
             vec![4.0, 4.0],
         ];
         let kde = MultivariateKDE::new(samples).unwrap();
-        let mut rng = rand::rng();
+        let mut rng = fastrand::Rng::new();
 
         // Samples should generally be in a reasonable range around the data
         for _ in 0..100 {
@@ -766,7 +764,7 @@ mod tests {
         // When KDE has only one sample, all samples should be centered around it
         let samples = vec![vec![5.0, 10.0]];
         let kde = MultivariateKDE::new(samples).unwrap();
-        let mut rng = rand::rng();
+        let mut rng = fastrand::Rng::new();
 
         // Generate many samples and check they cluster around (5.0, 10.0)
         let n_samples = 100;
@@ -803,7 +801,7 @@ mod tests {
             })
             .collect();
         let kde = MultivariateKDE::new(samples).unwrap();
-        let mut rng = rand::rng();
+        let mut rng = fastrand::Rng::new();
 
         // Sample should have correct dimensionality
         for _ in 0..50 {
@@ -823,7 +821,7 @@ mod tests {
         let data = vec![vec![0.0, 0.0], vec![0.0, 0.0], vec![0.0, 0.0]];
         let bandwidths = vec![0.1, 10.0]; // Small bandwidth in x, large in y
         let kde = MultivariateKDE::with_bandwidths(data, bandwidths).unwrap();
-        let mut rng = rand::rng();
+        let mut rng = fastrand::Rng::new();
 
         // Generate samples and check variance in each dimension
         let n_samples = 1000;
@@ -868,7 +866,7 @@ mod tests {
             vec![4.0, 4.0],
         ];
         let kde = MultivariateKDE::new(data).unwrap();
-        let mut rng = rand::rng();
+        let mut rng = fastrand::Rng::new();
 
         // Sample many points and verify the mean is near the center
         let n_samples = 500;
@@ -896,14 +894,12 @@ mod tests {
 
     #[test]
     fn test_multivariate_kde_sample_deterministic_with_seeded_rng() {
-        use rand::SeedableRng;
-
         let data = vec![vec![1.0, 2.0], vec![3.0, 4.0]];
         let kde = MultivariateKDE::new(data).unwrap();
 
         // Use a seeded RNG for reproducibility
-        let mut rng1 = rand::rngs::StdRng::seed_from_u64(42);
-        let mut rng2 = rand::rngs::StdRng::seed_from_u64(42);
+        let mut rng1 = fastrand::Rng::with_seed(42);
+        let mut rng2 = fastrand::Rng::with_seed(42);
 
         // Same seed should produce same samples
         let result1 = kde.sample(&mut rng1);

@@ -19,6 +19,7 @@
 //! - **Grid Search** - Exhaustive search over a specified parameter grid
 //! - **Sobol (QMC)** - Quasi-random sampling for better space coverage (requires `sobol` feature)
 //! - **CMA-ES** - Covariance Matrix Adaptation Evolution Strategy for continuous optimization (requires `cma-es` feature)
+//! - **DE** - Differential Evolution for population-based global optimization
 //! - **GP** - Gaussian Process Bayesian optimization with Expected Improvement (requires `gp` feature)
 //! - **BOHB** - Bayesian Optimization + `HyperBand` for budget-aware TPE sampling
 //! - **NSGA-II** - Non-dominated Sorting Genetic Algorithm II for multi-objective optimization
@@ -230,6 +231,7 @@ mod param;
 pub mod parameter;
 pub mod pareto;
 pub mod pruner;
+mod rng_util;
 pub mod sampler;
 mod study;
 mod trial;
@@ -255,6 +257,7 @@ pub use sampler::CompletedTrial;
 pub use sampler::bohb::BohbSampler;
 #[cfg(feature = "cma-es")]
 pub use sampler::cma_es::CmaEsSampler;
+pub use sampler::de::{DeSampler, DeStrategy};
 #[cfg(feature = "gp")]
 pub use sampler::gp::GpSampler;
 pub use sampler::grid::GridSearchSampler;
@@ -297,6 +300,7 @@ pub mod prelude {
     pub use crate::sampler::bohb::BohbSampler;
     #[cfg(feature = "cma-es")]
     pub use crate::sampler::cma_es::CmaEsSampler;
+    pub use crate::sampler::de::{DeSampler, DeStrategy};
     #[cfg(feature = "gp")]
     pub use crate::sampler::gp::GpSampler;
     pub use crate::sampler::grid::GridSearchSampler;

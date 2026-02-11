@@ -40,15 +40,13 @@
 //! ```
 
 use parking_lot::Mutex;
-use rand::rngs::StdRng;
-use rand::{RngExt, SeedableRng};
 
 use crate::distribution::Distribution;
 use crate::kde::KernelDensityEstimator;
 use crate::multi_objective::{MultiObjectiveSampler, MultiObjectiveTrial};
 use crate::param::ParamValue;
-use crate::pareto;
 use crate::types::{Direction, TrialState};
+use crate::{pareto, rng_util};
 
 /// Multi-Objective TPE (MOTPE) sampler for multi-objective Bayesian optimization.
 ///
@@ -85,7 +83,7 @@ pub struct MotpeSampler {
     /// Optional fixed bandwidth for KDE. If None, uses Scott's rule.
     kde_bandwidth: Option<f64>,
     /// Thread-safe RNG for sampling.
-    rng: Mutex<StdRng>,
+    rng: Mutex<fastrand::Rng>,
 }
 
 impl MotpeSampler {
@@ -101,7 +99,7 @@ impl MotpeSampler {
             n_startup_trials: 11,
             n_ei_candidates: 24,
             kde_bandwidth: None,
-            rng: Mutex::new(rand::make_rng()),
+            rng: Mutex::new(fastrand::Rng::new()),
         }
     }
 
@@ -112,7 +110,7 @@ impl MotpeSampler {
             n_startup_trials: 11,
             n_ei_candidates: 24,
             kde_bandwidth: None,
-            rng: Mutex::new(StdRng::seed_from_u64(seed)),
+            rng: Mutex::new(fastrand::Rng::with_seed(seed)),
         }
     }
 
@@ -173,19 +171,19 @@ impl MotpeSampler {
         clippy::cast_precision_loss,
         clippy::unused_self
     )]
-    fn sample_uniform(distribution: &Distribution, rng: &mut StdRng) -> ParamValue {
+    fn sample_uniform(distribution: &Distribution, rng: &mut fastrand::Rng) -> ParamValue {
         match distribution {
             Distribution::Float(d) => {
                 let value = if d.log_scale {
                     let log_low = d.low.ln();
                     let log_high = d.high.ln();
-                    rng.random_range(log_low..=log_high).exp()
+                    rng_util::f64_range(rng, log_low, log_high).exp()
                 } else if let Some(step) = d.step {
                     let n_steps = ((d.high - d.low) / step).floor() as i64;
-                    let k = rng.random_range(0..=n_steps);
+                    let k = rng.i64(0..=n_steps);
                     d.low + (k as f64) * step
                 } else {
-                    rng.random_range(d.low..=d.high)
+                    rng_util::f64_range(rng, d.low, d.high)
                 };
                 ParamValue::Float(value)
             }
@@ -193,20 +191,18 @@ impl MotpeSampler {
                 let value = if d.log_scale {
                     let log_low = (d.low as f64).ln();
                     let log_high = (d.high as f64).ln();
-                    let raw = rng.random_range(log_low..=log_high).exp().round() as i64;
+                    let raw = rng_util::f64_range(rng, log_low, log_high).exp().round() as i64;
                     raw.clamp(d.low, d.high)
                 } else if let Some(step) = d.step {
                     let n_steps = (d.high - d.low) / step;
-                    let k = rng.random_range(0..=n_steps);
+                    let k = rng.i64(0..=n_steps);
                     d.low + k * step
                 } else {
-                    rng.random_range(d.low..=d.high)
+                    rng.i64(d.low..=d.high)
                 };
                 ParamValue::Int(value)
             }
-            Distribution::Categorical(d) => {
-                ParamValue::Categorical(rng.random_range(0..d.n_choices))
-            }
+            Distribution::Categorical(d) => ParamValue::Categorical(rng.usize(0..d.n_choices)),
         }
     }
 
@@ -220,7 +216,7 @@ impl MotpeSampler {
         step: Option<f64>,
         good_values: Vec<f64>,
         bad_values: Vec<f64>,
-        rng: &mut StdRng,
+        rng: &mut fastrand::Rng,
     ) -> f64 {
         // Transform to internal space (log space if needed)
         let (internal_low, internal_high, good_internal, bad_internal) = if log_scale {
@@ -245,7 +241,7 @@ impl MotpeSampler {
 
         // If KDE construction fails, fall back to uniform sampling
         let (Ok(l_kde), Ok(g_kde)) = (l_kde, g_kde) else {
-            return rng.random_range(low..=high);
+            return rng_util::f64_range(rng, low, high);
         };
 
         // Generate candidates from l(x) and select the one with best l(x)/g(x)
@@ -304,7 +300,7 @@ impl MotpeSampler {
         step: Option<i64>,
         good_values: &[i64],
         bad_values: &[i64],
-        rng: &mut StdRng,
+        rng: &mut fastrand::Rng,
     ) -> i64 {
         let good_floats: Vec<f64> = good_values.iter().map(|&v| v as f64).collect();
         let bad_floats: Vec<f64> = bad_values.iter().map(|&v| v as f64).collect();
@@ -336,7 +332,7 @@ impl MotpeSampler {
         n_choices: usize,
         good_indices: &[usize],
         bad_indices: &[usize],
-        rng: &mut StdRng,
+        rng: &mut fastrand::Rng,
     ) -> usize {
         let mut good_counts = vec![0usize; n_choices];
         let mut bad_counts = vec![0usize; n_choices];
@@ -365,7 +361,7 @@ impl MotpeSampler {
 
         // Sample proportionally to weights
         let total_weight: f64 = weights.iter().sum();
-        let threshold = rng.random::<f64>() * total_weight;
+        let threshold = rng.f64() * total_weight;
 
         let mut cumulative = 0.0;
         for (i, &w) in weights.iter().enumerate() {
@@ -589,8 +585,8 @@ impl MotpeSamplerBuilder {
     #[must_use]
     pub fn build(self) -> MotpeSampler {
         let rng = match self.seed {
-            Some(s) => StdRng::seed_from_u64(s),
-            None => rand::make_rng(),
+            Some(s) => fastrand::Rng::with_seed(s),
+            None => fastrand::Rng::new(),
         };
 
         MotpeSampler {

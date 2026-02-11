@@ -27,14 +27,12 @@
 use std::collections::HashMap;
 
 use parking_lot::Mutex;
-use rand::rngs::StdRng;
-use rand::{RngExt, SeedableRng};
 
 use crate::distribution::Distribution;
 use crate::multi_objective::MultiObjectiveTrial;
 use crate::param::ParamValue;
-use crate::pareto;
 use crate::types::Direction;
+use crate::{pareto, rng_util};
 
 /// NSGA-II sampler for multi-objective optimization.
 ///
@@ -185,7 +183,7 @@ enum Phase {
 }
 
 struct Nsga2State {
-    rng: StdRng,
+    rng: fastrand::Rng,
     config: Nsga2Config,
     phase: Phase,
     dimensions: Vec<DimensionInfo>,
@@ -201,7 +199,7 @@ struct Nsga2State {
 
 impl Nsga2State {
     fn new(config: Nsga2Config, seed: Option<u64>) -> Self {
-        let rng = seed.map_or_else(rand::make_rng, StdRng::seed_from_u64);
+        let rng = seed.map_or_else(fastrand::Rng::new, fastrand::Rng::with_seed);
         Self {
             rng,
             config,
@@ -457,7 +455,7 @@ fn nsga2_select(
     }
 
     while selected.len() < pop_size {
-        selected.push(state.rng.random_range(0..n));
+        selected.push(state.rng.usize(0..n));
     }
 
     // Extract parent parameter vectors ordered by dimension
@@ -476,7 +474,7 @@ fn nsga2_select(
 fn extract_trial_params(
     trial: &MultiObjectiveTrial,
     dimensions: &[DimensionInfo],
-    rng: &mut StdRng,
+    rng: &mut fastrand::Rng,
 ) -> Vec<ParamValue> {
     let mut param_pairs: Vec<_> = trial.params.iter().collect();
     param_pairs.sort_by_key(|(id, _)| *id);
@@ -559,9 +557,14 @@ fn nsga2_generate_offspring(
 
 /// Tournament selection: pick 2 random individuals, return index of winner.
 /// Winner has lower rank; ties broken by higher crowding distance.
-fn tournament_select(rng: &mut StdRng, ranks: &[usize], crowding: &[f64], n: usize) -> usize {
-    let a = rng.random_range(0..n);
-    let b = rng.random_range(0..n);
+fn tournament_select(
+    rng: &mut fastrand::Rng,
+    ranks: &[usize],
+    crowding: &[f64],
+    n: usize,
+) -> usize {
+    let a = rng.usize(0..n);
+    let b = rng.usize(0..n);
 
     if ranks[a] < ranks[b] {
         a
@@ -576,7 +579,7 @@ fn tournament_select(rng: &mut StdRng, ranks: &[usize], crowding: &[f64], n: usi
 
 /// SBX crossover for continuous params, uniform crossover for categorical.
 fn crossover(
-    rng: &mut StdRng,
+    rng: &mut fastrand::Rng,
     parent1: &[ParamValue],
     parent2: &[ParamValue],
     dimensions: &[DimensionInfo],
@@ -587,7 +590,7 @@ fn crossover(
     let mut child1 = parent1.to_vec();
     let mut child2 = parent2.to_vec();
 
-    let u: f64 = rng.random_range(0.0..=1.0);
+    let u: f64 = rng_util::f64_range(rng, 0.0, 1.0);
     if u > crossover_prob {
         return (child1, child2);
     }
@@ -623,7 +626,7 @@ fn crossover(
             }
             (ParamValue::Categorical(_), ParamValue::Categorical(_), _) => {
                 // Uniform crossover: swap with 50% probability
-                if rng.random_range(0.0..=1.0) < 0.5 {
+                if rng_util::f64_range(rng, 0.0, 1.0) < 0.5 {
                     core::mem::swap(&mut child1[i], &mut child2[i]);
                 }
             }
@@ -636,14 +639,14 @@ fn crossover(
 
 /// SBX crossover for a single float dimension.
 fn sbx_crossover_f64(
-    rng: &mut StdRng,
+    rng: &mut fastrand::Rng,
     p1: f64,
     p2: f64,
     low: f64,
     high: f64,
     eta: f64,
 ) -> (f64, f64) {
-    let u: f64 = rng.random_range(0.0_f64..1.0_f64);
+    let u: f64 = rng_util::f64_range(rng, 0.0, 1.0);
 
     let beta = if u <= 0.5 {
         (2.0 * u).powf(1.0 / (eta + 1.0))
@@ -659,7 +662,12 @@ fn sbx_crossover_f64(
 
 /// Polynomial mutation for each dimension.
 #[allow(clippy::cast_precision_loss)]
-fn mutate(rng: &mut StdRng, individual: &mut [ParamValue], dimensions: &[DimensionInfo], eta: f64) {
+fn mutate(
+    rng: &mut fastrand::Rng,
+    individual: &mut [ParamValue],
+    dimensions: &[DimensionInfo],
+    eta: f64,
+) {
     let n = individual.len();
     if n == 0 {
         return;
@@ -667,7 +675,7 @@ fn mutate(rng: &mut StdRng, individual: &mut [ParamValue], dimensions: &[Dimensi
     let mutation_prob = 1.0 / n as f64;
 
     for (i, value) in individual.iter_mut().enumerate() {
-        if rng.random_range(0.0..=1.0) >= mutation_prob {
+        if rng_util::f64_range(rng, 0.0, 1.0) >= mutation_prob {
             continue;
         }
 
@@ -691,7 +699,7 @@ fn mutate(rng: &mut StdRng, individual: &mut [ParamValue], dimensions: &[Dimensi
                 }
             }
             (v @ ParamValue::Categorical(_), Distribution::Categorical(d)) => {
-                *v = ParamValue::Categorical(rng.random_range(0..d.n_choices));
+                *v = ParamValue::Categorical(rng.usize(0..d.n_choices));
             }
             _ => {}
         }
@@ -699,8 +707,8 @@ fn mutate(rng: &mut StdRng, individual: &mut [ParamValue], dimensions: &[Dimensi
 }
 
 /// Polynomial mutation for a single float value.
-fn polynomial_mutation_f64(rng: &mut StdRng, x: f64, low: f64, high: f64, eta: f64) -> f64 {
-    let u: f64 = rng.random_range(0.0_f64..1.0_f64);
+fn polynomial_mutation_f64(rng: &mut fastrand::Rng, x: f64, low: f64, high: f64, eta: f64) -> f64 {
+    let u: f64 = rng_util::f64_range(rng, 0.0, 1.0);
     let range = high - low;
     if range <= 0.0 {
         return x;
@@ -727,19 +735,19 @@ fn polynomial_mutation_f64(rng: &mut StdRng, x: f64, low: f64, high: f64, eta: f
 // ---------------------------------------------------------------------------
 
 #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
-fn sample_random(rng: &mut StdRng, distribution: &Distribution) -> ParamValue {
+fn sample_random(rng: &mut fastrand::Rng, distribution: &Distribution) -> ParamValue {
     match distribution {
         Distribution::Float(d) => {
             let value = if d.log_scale {
                 let log_low = d.low.ln();
                 let log_high = d.high.ln();
-                rng.random_range(log_low..=log_high).exp()
+                rng_util::f64_range(rng, log_low, log_high).exp()
             } else if let Some(step) = d.step {
                 let n_steps = ((d.high - d.low) / step).floor() as i64;
-                let k = rng.random_range(0..=n_steps);
+                let k = rng.i64(0..=n_steps);
                 d.low + (k as f64) * step
             } else {
-                rng.random_range(d.low..=d.high)
+                rng_util::f64_range(rng, d.low, d.high)
             };
             ParamValue::Float(value)
         }
@@ -747,17 +755,17 @@ fn sample_random(rng: &mut StdRng, distribution: &Distribution) -> ParamValue {
             let value = if d.log_scale {
                 let log_low = (d.low as f64).ln();
                 let log_high = (d.high as f64).ln();
-                let raw = rng.random_range(log_low..=log_high).exp().round() as i64;
+                let raw = rng_util::f64_range(rng, log_low, log_high).exp().round() as i64;
                 raw.clamp(d.low, d.high)
             } else if let Some(step) = d.step {
                 let n_steps = (d.high - d.low) / step;
-                let k = rng.random_range(0..=n_steps);
+                let k = rng.i64(0..=n_steps);
                 d.low + k * step
             } else {
-                rng.random_range(d.low..=d.high)
+                rng.i64(d.low..=d.high)
             };
             ParamValue::Int(value)
         }
-        Distribution::Categorical(d) => ParamValue::Categorical(rng.random_range(0..d.n_choices)),
+        Distribution::Categorical(d) => ParamValue::Categorical(rng.usize(0..d.n_choices)),
     }
 }

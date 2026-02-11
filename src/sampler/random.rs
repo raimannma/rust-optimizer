@@ -1,11 +1,10 @@
 //! Random sampler implementation.
 
 use parking_lot::Mutex;
-use rand::rngs::StdRng;
-use rand::{RngExt, SeedableRng};
 
 use crate::distribution::Distribution;
 use crate::param::ParamValue;
+use crate::rng_util;
 use crate::sampler::{CompletedTrial, Sampler};
 
 /// A simple random sampler that samples uniformly from distributions.
@@ -26,7 +25,7 @@ use crate::sampler::{CompletedTrial, Sampler};
 /// let sampler = RandomSampler::with_seed(42);
 /// ```
 pub struct RandomSampler {
-    rng: Mutex<StdRng>,
+    rng: Mutex<fastrand::Rng>,
 }
 
 impl RandomSampler {
@@ -34,7 +33,7 @@ impl RandomSampler {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            rng: Mutex::new(rand::make_rng()),
+            rng: Mutex::new(fastrand::Rng::new()),
         }
     }
 
@@ -44,7 +43,7 @@ impl RandomSampler {
     #[must_use]
     pub fn with_seed(seed: u64) -> Self {
         Self {
-            rng: Mutex::new(StdRng::seed_from_u64(seed)),
+            rng: Mutex::new(fastrand::Rng::with_seed(seed)),
         }
     }
 }
@@ -71,16 +70,16 @@ impl Sampler for RandomSampler {
                     // Sample uniformly in log space
                     let log_low = d.low.ln();
                     let log_high = d.high.ln();
-                    let log_value = rng.random_range(log_low..=log_high);
+                    let log_value = rng_util::f64_range(&mut rng, log_low, log_high);
                     log_value.exp()
                 } else if let Some(step) = d.step {
                     // Sample from step grid
                     let n_steps = ((d.high - d.low) / step).floor() as i64;
-                    let k = rng.random_range(0..=n_steps);
+                    let k = rng.i64(0..=n_steps);
                     d.low + (k as f64) * step
                 } else {
                     // Uniform sampling
-                    rng.random_range(d.low..=d.high)
+                    rng_util::f64_range(&mut rng, d.low, d.high)
                 };
                 ParamValue::Float(value)
             }
@@ -89,23 +88,23 @@ impl Sampler for RandomSampler {
                     // Sample uniformly in log space, then round
                     let log_low = (d.low as f64).ln();
                     let log_high = (d.high as f64).ln();
-                    let log_value = rng.random_range(log_low..=log_high);
+                    let log_value = rng_util::f64_range(&mut rng, log_low, log_high);
                     let raw = log_value.exp().round() as i64;
                     // Clamp to bounds since rounding might push outside
                     raw.clamp(d.low, d.high)
                 } else if let Some(step) = d.step {
                     // Sample from step grid
                     let n_steps = (d.high - d.low) / step;
-                    let k = rng.random_range(0..=n_steps);
+                    let k = rng.i64(0..=n_steps);
                     d.low + k * step
                 } else {
                     // Uniform sampling
-                    rng.random_range(d.low..=d.high)
+                    rng.i64(d.low..=d.high)
                 };
                 ParamValue::Int(value)
             }
             Distribution::Categorical(d) => {
-                let index = rng.random_range(0..d.n_choices);
+                let index = rng.usize(0..d.n_choices);
                 ParamValue::Categorical(index)
             }
         }

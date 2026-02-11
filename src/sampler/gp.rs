@@ -25,11 +25,10 @@ use std::collections::HashMap;
 
 use nalgebra::DMatrix;
 use parking_lot::Mutex;
-use rand::rngs::StdRng;
-use rand::{RngExt, SeedableRng};
 
 use crate::distribution::Distribution;
 use crate::param::ParamValue;
+use crate::rng_util;
 use crate::sampler::{CompletedTrial, Sampler};
 
 // ---------------------------------------------------------------------------
@@ -244,7 +243,7 @@ struct GpModel {
 
 /// Top-level mutable state behind the `Mutex`.
 struct GpState {
-    rng: StdRng,
+    rng: fastrand::Rng,
     n_startup_trials: usize,
     n_candidates: usize,
     noise_variance: f64,
@@ -261,7 +260,7 @@ impl GpState {
         noise_var: Option<f64>,
         seed: Option<u64>,
     ) -> Self {
-        let rng = seed.map_or_else(rand::make_rng, StdRng::seed_from_u64);
+        let rng = seed.map_or_else(fastrand::Rng::new, fastrand::Rng::with_seed);
         Self {
             rng,
             n_startup_trials: n_startup.unwrap_or(DEFAULT_N_STARTUP),
@@ -462,13 +461,15 @@ fn optimize_acquisition(
     model: &GpModel,
     n_dims: usize,
     n_candidates: usize,
-    rng: &mut StdRng,
+    rng: &mut fastrand::Rng,
 ) -> Vec<f64> {
     let mut best_ei = f64::NEG_INFINITY;
     let mut best_x = vec![0.5; n_dims];
 
     for _ in 0..n_candidates {
-        let x: Vec<f64> = (0..n_dims).map(|_| rng.random_range(0.0..=1.0)).collect();
+        let x: Vec<f64> = (0..n_dims)
+            .map(|_| rng_util::f64_range(rng, 0.0, 1.0))
+            .collect();
         let (mean, std) = predict(model, &x);
         let ei = expected_improvement(mean, std, model.f_best);
         if ei > best_ei {
@@ -574,19 +575,19 @@ fn to_internal(value: &ParamValue, distribution: &Distribution) -> f64 {
 
 /// Sample a random value for any distribution.
 #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
-fn sample_random(rng: &mut StdRng, distribution: &Distribution) -> ParamValue {
+fn sample_random(rng: &mut fastrand::Rng, distribution: &Distribution) -> ParamValue {
     match distribution {
         Distribution::Float(d) => {
             let value = if d.log_scale {
                 let log_low = d.low.ln();
                 let log_high = d.high.ln();
-                rng.random_range(log_low..=log_high).exp()
+                rng_util::f64_range(rng, log_low, log_high).exp()
             } else if let Some(step) = d.step {
                 let n_steps = ((d.high - d.low) / step).floor() as i64;
-                let k = rng.random_range(0..=n_steps);
+                let k = rng.i64(0..=n_steps);
                 d.low + (k as f64) * step
             } else {
-                rng.random_range(d.low..=d.high)
+                rng_util::f64_range(rng, d.low, d.high)
             };
             ParamValue::Float(value)
         }
@@ -594,18 +595,18 @@ fn sample_random(rng: &mut StdRng, distribution: &Distribution) -> ParamValue {
             let value = if d.log_scale {
                 let log_low = (d.low as f64).ln();
                 let log_high = (d.high as f64).ln();
-                let raw = rng.random_range(log_low..=log_high).exp().round() as i64;
+                let raw = rng_util::f64_range(rng, log_low, log_high).exp().round() as i64;
                 raw.clamp(d.low, d.high)
             } else if let Some(step) = d.step {
                 let n_steps = (d.high - d.low) / step;
-                let k = rng.random_range(0..=n_steps);
+                let k = rng.i64(0..=n_steps);
                 d.low + k * step
             } else {
-                rng.random_range(d.low..=d.high)
+                rng.i64(d.low..=d.high)
             };
             ParamValue::Int(value)
         }
-        Distribution::Categorical(d) => ParamValue::Categorical(rng.random_range(0..d.n_choices)),
+        Distribution::Categorical(d) => ParamValue::Categorical(rng.usize(0..d.n_choices)),
     }
 }
 
@@ -815,7 +816,7 @@ fn compute_gp_candidate(state: &mut GpState, history: &[CompletedTrial]) -> Vec<
     } else {
         // GP fitting failed; use random
         (0..n_continuous)
-            .map(|_| state.rng.random_range(0.0..=1.0))
+            .map(|_| rng_util::f64_range(&mut state.rng, 0.0, 1.0))
             .collect()
     };
 

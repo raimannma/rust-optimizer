@@ -116,14 +116,13 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use parking_lot::Mutex;
-use rand::rngs::StdRng;
-use rand::{RngExt, SeedableRng};
 
 use super::{FixedGamma, GammaStrategy};
 use crate::distribution::Distribution;
 use crate::error::Result;
 use crate::param::ParamValue;
 use crate::parameter::ParamId;
+use crate::rng_util;
 use crate::sampler::{CompletedTrial, PendingTrial, Sampler};
 
 /// Strategy for imputing objective values for pending/running trials during parallel optimization.
@@ -189,7 +188,7 @@ pub struct MultivariateTpeSampler {
     /// Strategy for imputing objective values for pending trials in parallel optimization.
     constant_liar: ConstantLiarStrategy,
     /// Thread-safe RNG for sampling.
-    rng: Mutex<StdRng>,
+    rng: Mutex<fastrand::Rng>,
     /// Cache for joint samples to maintain consistency across parameters within the same trial.
     /// The tuple contains (`trial_id`, cached joint sample).
     joint_sample_cache: Mutex<Option<(u64, HashMap<ParamId, ParamValue>)>>,
@@ -219,7 +218,7 @@ impl MultivariateTpeSampler {
             n_ei_candidates: 24,
             group: false,
             constant_liar: ConstantLiarStrategy::None,
-            rng: Mutex::new(rand::make_rng()),
+            rng: Mutex::new(fastrand::Rng::new()),
             joint_sample_cache: Mutex::new(None),
         }
     }
@@ -695,7 +694,7 @@ impl MultivariateTpeSampler {
 
         // Generate candidates from the good distribution
         let candidates: Vec<Vec<f64>> = (0..self.n_ei_candidates)
-            .map(|_| good_kde.sample(&mut *rng))
+            .map(|_| good_kde.sample(&mut rng))
             .collect();
 
         // Compute log(l(x)) - log(g(x)) for each candidate
@@ -731,7 +730,7 @@ impl MultivariateTpeSampler {
         &self,
         good_kde: &crate::kde::MultivariateKDE,
         bad_kde: &crate::kde::MultivariateKDE,
-        rng: &mut StdRng,
+        rng: &mut fastrand::Rng,
     ) -> Vec<f64> {
         // Generate candidates from the good distribution
         let candidates: Vec<Vec<f64>> = (0..self.n_ei_candidates)
@@ -769,7 +768,7 @@ impl MultivariateTpeSampler {
     fn sample_all_uniform(
         &self,
         search_space: &HashMap<ParamId, Distribution>,
-        rng: &mut rand::rngs::StdRng,
+        rng: &mut fastrand::Rng,
     ) -> HashMap<ParamId, ParamValue> {
         search_space
             .iter()
@@ -778,25 +777,22 @@ impl MultivariateTpeSampler {
     }
 
     /// Samples a single parameter uniformly at random from its distribution.
-    fn sample_uniform_single(
-        distribution: &Distribution,
-        rng: &mut rand::rngs::StdRng,
-    ) -> ParamValue {
+    fn sample_uniform_single(distribution: &Distribution, rng: &mut fastrand::Rng) -> ParamValue {
         match distribution {
             Distribution::Float(d) => {
                 let value = if d.log_scale {
                     let log_low = d.low.ln();
                     let log_high = d.high.ln();
-                    rng.random_range(log_low..=log_high).exp()
+                    rng_util::f64_range(rng, log_low, log_high).exp()
                 } else if let Some(step) = d.step {
                     #[allow(clippy::cast_possible_truncation)]
                     let n_steps = ((d.high - d.low) / step).floor() as i64;
-                    let k = rng.random_range(0..=n_steps);
+                    let k = rng.i64(0..=n_steps);
                     #[allow(clippy::cast_precision_loss)]
                     let result = d.low + (k as f64) * step;
                     result
                 } else {
-                    rng.random_range(d.low..=d.high)
+                    rng_util::f64_range(rng, d.low, d.high)
                 };
                 ParamValue::Float(value)
             }
@@ -806,20 +802,20 @@ impl MultivariateTpeSampler {
                     let log_low = (d.low as f64).ln();
                     let log_high = (d.high as f64).ln();
                     #[allow(clippy::cast_possible_truncation)]
-                    let raw = rng.random_range(log_low..=log_high).exp().round() as i64;
+                    let raw = rng_util::f64_range(rng, log_low, log_high).exp().round() as i64;
                     raw.clamp(d.low, d.high)
                 } else if let Some(step) = d.step {
                     #[allow(clippy::cast_possible_truncation)]
                     let n_steps = (d.high - d.low) / step;
-                    let k = rng.random_range(0..=n_steps);
+                    let k = rng.i64(0..=n_steps);
                     d.low + k * step
                 } else {
-                    rng.random_range(d.low..=d.high)
+                    rng.i64(d.low..=d.high)
                 };
                 ParamValue::Int(value)
             }
             Distribution::Categorical(d) => {
-                let index = rng.random_range(0..d.n_choices);
+                let index = rng.usize(0..d.n_choices);
                 ParamValue::Categorical(index)
             }
         }
@@ -1018,7 +1014,7 @@ impl MultivariateTpeSampler {
         &self,
         search_space: &HashMap<ParamId, Distribution>,
         history: &[CompletedTrial],
-        rng: &mut StdRng,
+        rng: &mut fastrand::Rng,
     ) -> HashMap<ParamId, ParamValue> {
         use super::IntersectionSearchSpace;
         use crate::kde::MultivariateKDE;
@@ -1220,7 +1216,7 @@ impl MultivariateTpeSampler {
         _intersection: &HashMap<ParamId, Distribution>,
         history: &[CompletedTrial],
         result: &mut HashMap<ParamId, ParamValue>,
-        rng: &mut StdRng,
+        rng: &mut fastrand::Rng,
     ) {
         // Identify parameters not in result (and not in intersection)
         let missing_params: Vec<(&ParamId, &Distribution)> = search_space
@@ -1253,7 +1249,7 @@ impl MultivariateTpeSampler {
         distribution: &Distribution,
         good_trials: &[&CompletedTrial],
         bad_trials: &[&CompletedTrial],
-        rng: &mut StdRng,
+        rng: &mut fastrand::Rng,
     ) -> ParamValue {
         match distribution {
             Distribution::Float(d) => {
@@ -1370,7 +1366,7 @@ impl MultivariateTpeSampler {
         step: Option<f64>,
         good_values: Vec<f64>,
         bad_values: Vec<f64>,
-        rng: &mut StdRng,
+        rng: &mut fastrand::Rng,
     ) -> f64 {
         use crate::kde::KernelDensityEstimator;
 
@@ -1391,7 +1387,7 @@ impl MultivariateTpeSampler {
 
         // If KDE construction fails, fall back to uniform sampling
         let (Ok(l_kde), Ok(g_kde)) = (l_kde, g_kde) else {
-            return rng.random_range(low..=high);
+            return rng_util::f64_range(rng, low, high);
         };
 
         // Generate candidates from l(x) and select the one with best l(x)/g(x) ratio
@@ -1455,7 +1451,7 @@ impl MultivariateTpeSampler {
         step: Option<i64>,
         good_values: &[i64],
         bad_values: &[i64],
-        rng: &mut StdRng,
+        rng: &mut fastrand::Rng,
     ) -> i64 {
         // Convert to floats for KDE
         let good_floats: Vec<f64> = good_values.iter().map(|&v| v as f64).collect();
@@ -1518,7 +1514,7 @@ impl MultivariateTpeSampler {
         &self,
         search_space: &HashMap<ParamId, Distribution>,
         history: &[CompletedTrial],
-        rng: &mut StdRng,
+        rng: &mut fastrand::Rng,
     ) -> HashMap<ParamId, ParamValue> {
         // Split trials for independent sampling
         let (good_trials, bad_trials) = self.split_trials(&history.iter().collect::<Vec<_>>());
@@ -1562,7 +1558,7 @@ impl MultivariateTpeSampler {
         n_choices: usize,
         good_indices: &[usize],
         bad_indices: &[usize],
-        rng: &mut rand::rngs::StdRng,
+        rng: &mut fastrand::Rng,
     ) -> usize {
         // Count occurrences in good and bad groups
         let mut good_counts = vec![0usize; n_choices];
@@ -1593,7 +1589,7 @@ impl MultivariateTpeSampler {
 
         // Sample proportionally to weights
         let total_weight: f64 = weights.iter().sum();
-        let threshold = rng.random::<f64>() * total_weight;
+        let threshold = rng.f64() * total_weight;
 
         let mut cumulative = 0.0;
         for (i, &w) in weights.iter().enumerate() {
@@ -2069,8 +2065,8 @@ impl MultivariateTpeSamplerBuilder {
         };
 
         let rng = match self.seed {
-            Some(s) => StdRng::seed_from_u64(s),
-            None => rand::make_rng(),
+            Some(s) => fastrand::Rng::with_seed(s),
+            None => fastrand::Rng::new(),
         };
 
         Ok(MultivariateTpeSampler {
@@ -4854,8 +4850,7 @@ mod tests {
 
         #[test]
         fn test_sample_tpe_categorical_basic() {
-            use rand::SeedableRng;
-            let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+            let mut rng = fastrand::Rng::with_seed(42);
 
             // Category 0 is good (appears more in good trials)
             let good_indices = vec![0, 0, 0, 1];
@@ -4890,8 +4885,7 @@ mod tests {
 
         #[test]
         fn test_sample_tpe_categorical_laplace_smoothing() {
-            use rand::SeedableRng;
-            let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+            let mut rng = fastrand::Rng::with_seed(42);
 
             // Category 2 never appears, but should still be sampled due to Laplace smoothing
             let good_indices = vec![0, 0, 1];
@@ -4919,8 +4913,7 @@ mod tests {
 
         #[test]
         fn test_sample_tpe_categorical_empty_good() {
-            use rand::SeedableRng;
-            let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+            let mut rng = fastrand::Rng::with_seed(42);
 
             // Empty good group - all categories should have equal probability
             let good_indices: Vec<usize> = vec![];
@@ -4945,8 +4938,7 @@ mod tests {
 
         #[test]
         fn test_sample_tpe_categorical_all_indices_valid() {
-            use rand::SeedableRng;
-            let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+            let mut rng = fastrand::Rng::with_seed(42);
 
             let n_choices = 4;
             let good_indices = vec![0, 1, 2, 3];

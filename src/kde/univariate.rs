@@ -3,8 +3,6 @@
 //! This module provides a Gaussian kernel density estimator used by the TPE
 //! sampler to model probability distributions over good and bad trial regions.
 
-use rand::{Rng, RngExt};
-
 use crate::error::{Error, Result};
 
 /// A Gaussian kernel density estimator for continuous distributions.
@@ -26,7 +24,7 @@ use crate::error::{Error, Result};
 /// assert!(density > 0.0);
 ///
 /// // Sample from the estimated distribution
-/// let mut rng = rand::rng();
+/// let mut rng = fastrand::Rng::new();
 /// let sample = kde.sample(&mut rng);
 /// ```
 #[derive(Clone, Debug)]
@@ -132,15 +130,15 @@ impl KernelDensityEstimator {
     /// Sampling works by:
     /// 1. Uniformly selecting one of the kernel centers (samples)
     /// 2. Adding Gaussian noise with the bandwidth as standard deviation
-    pub(crate) fn sample<R: Rng>(&self, rng: &mut R) -> f64 {
+    pub(crate) fn sample(&self, rng: &mut fastrand::Rng) -> f64 {
         // Select a random sample to center the kernel on
-        let idx = rng.random_range(0..self.samples.len());
+        let idx = rng.usize(0..self.samples.len());
         let center = self.samples[idx];
 
         // Add Gaussian noise with bandwidth as standard deviation
         // Using Box-Muller transform for Gaussian sampling
-        let u1: f64 = rng.random();
-        let u2: f64 = rng.random();
+        let u1: f64 = rng.f64();
+        let u2: f64 = rng.f64();
 
         let z = (-2.0 * u1.ln()).sqrt() * (2.0 * core::f64::consts::PI * u2).cos();
         center + z * self.bandwidth
@@ -211,7 +209,7 @@ mod tests {
     fn test_kde_sample_in_reasonable_range() {
         let samples = vec![0.0, 1.0, 2.0, 3.0, 4.0];
         let kde = KernelDensityEstimator::new(samples).unwrap();
-        let mut rng = rand::rng();
+        let mut rng = fastrand::Rng::new();
 
         // Samples should generally be in a reasonable range around the data
         for _ in 0..100 {

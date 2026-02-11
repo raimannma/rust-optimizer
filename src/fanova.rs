@@ -9,9 +9,6 @@
 //! 3. Computes main effects (single-parameter importance)
 //! 4. Computes interaction effects (pairwise parameter importance)
 
-use rand::rngs::StdRng;
-use rand::{RngExt, SeedableRng};
-
 /// Result of fANOVA analysis.
 #[derive(Debug, Clone)]
 pub struct FanovaResult {
@@ -81,7 +78,7 @@ impl DecisionTree {
         targets: &[f64],
         indices: &[usize],
         config: &FanovaConfig,
-        rng: &mut StdRng,
+        rng: &mut fastrand::Rng,
     ) -> Self {
         let mut tree = Self { nodes: Vec::new() };
         tree.build_node(data, targets, indices, 0, config, rng);
@@ -96,7 +93,7 @@ impl DecisionTree {
         indices: &[usize],
         depth: usize,
         config: &FanovaConfig,
-        rng: &mut StdRng,
+        rng: &mut fastrand::Rng,
     ) -> usize {
         let n = indices.len();
         let mean = indices.iter().map(|&i| targets[i]).sum::<f64>() / n as f64;
@@ -264,11 +261,11 @@ impl DecisionTree {
 // --- Helper Functions ---
 
 /// Select `k` random indices from `0..n` using partial Fisher-Yates shuffle.
-fn partial_shuffle(n: usize, k: usize, rng: &mut StdRng) -> Vec<usize> {
+fn partial_shuffle(n: usize, k: usize, rng: &mut fastrand::Rng) -> Vec<usize> {
     let mut indices: Vec<usize> = (0..n).collect();
     let k = k.min(n);
     for i in 0..k {
-        let j = rng.random_range(i..n);
+        let j = rng.usize(i..n);
         indices.swap(i, j);
     }
     indices.truncate(k);
@@ -331,16 +328,14 @@ pub(crate) fn compute_fanova(
     let n_samples = data.len();
     let n_features = data[0].len();
 
-    let mut rng: StdRng = config
+    let mut rng: fastrand::Rng = config
         .seed
-        .map_or_else(rand::make_rng, StdRng::seed_from_u64);
+        .map_or_else(fastrand::Rng::new, fastrand::Rng::with_seed);
 
     // Build random forest with bootstrap sampling
     let trees: Vec<DecisionTree> = (0..config.n_trees)
         .map(|_| {
-            let bootstrap: Vec<usize> = (0..n_samples)
-                .map(|_| rng.random_range(0..n_samples))
-                .collect();
+            let bootstrap: Vec<usize> = (0..n_samples).map(|_| rng.usize(0..n_samples)).collect();
             DecisionTree::build(data, targets, &bootstrap, config, &mut rng)
         })
         .collect();
@@ -414,14 +409,20 @@ pub(crate) fn compute_fanova(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::rng_util;
 
     #[test]
     fn single_dominant_parameter() {
         // f(x, y) = x — only x matters
-        let mut rng = StdRng::seed_from_u64(0);
+        let mut rng = fastrand::Rng::with_seed(0);
         let n = 100;
         let data: Vec<Vec<f64>> = (0..n)
-            .map(|_| vec![rng.random_range(0.0..10.0), rng.random_range(0.0..10.0)])
+            .map(|_| {
+                vec![
+                    rng_util::f64_range(&mut rng, 0.0, 10.0),
+                    rng_util::f64_range(&mut rng, 0.0, 10.0),
+                ]
+            })
             .collect();
         let targets: Vec<f64> = data.iter().map(|row| row[0]).collect();
 
@@ -443,10 +444,15 @@ mod tests {
     #[test]
     fn interaction_detection() {
         // f(x, y) = x * y — both matter and interact
-        let mut rng = StdRng::seed_from_u64(0);
+        let mut rng = fastrand::Rng::with_seed(42);
         let n = 200;
         let data: Vec<Vec<f64>> = (0..n)
-            .map(|_| vec![rng.random_range(0.0..10.0), rng.random_range(0.0..10.0)])
+            .map(|_| {
+                vec![
+                    rng_util::f64_range(&mut rng, 0.0, 10.0),
+                    rng_util::f64_range(&mut rng, 0.0, 10.0),
+                ]
+            })
             .collect();
         let targets: Vec<f64> = data.iter().map(|row| row[0] * row[1]).collect();
 
@@ -477,14 +483,14 @@ mod tests {
     #[test]
     fn three_params_one_dominant() {
         // f(x, y, z) = 3*x + 0.1*y + 0*z
-        let mut rng = StdRng::seed_from_u64(7);
+        let mut rng = fastrand::Rng::with_seed(7);
         let n = 150;
         let data: Vec<Vec<f64>> = (0..n)
             .map(|_| {
                 vec![
-                    rng.random_range(0.0..10.0),
-                    rng.random_range(0.0..10.0),
-                    rng.random_range(0.0..10.0),
+                    rng_util::f64_range(&mut rng, 0.0, 10.0),
+                    rng_util::f64_range(&mut rng, 0.0, 10.0),
+                    rng_util::f64_range(&mut rng, 0.0, 10.0),
                 ]
             })
             .collect();
@@ -512,10 +518,15 @@ mod tests {
 
     #[test]
     fn importances_sum_to_one() {
-        let mut rng = StdRng::seed_from_u64(3);
+        let mut rng = fastrand::Rng::with_seed(3);
         let n = 100;
         let data: Vec<Vec<f64>> = (0..n)
-            .map(|_| vec![rng.random_range(0.0..10.0), rng.random_range(0.0..10.0)])
+            .map(|_| {
+                vec![
+                    rng_util::f64_range(&mut rng, 0.0, 10.0),
+                    rng_util::f64_range(&mut rng, 0.0, 10.0),
+                ]
+            })
             .collect();
         let targets: Vec<f64> = data.iter().map(|r| r[0] + r[1]).collect();
 
