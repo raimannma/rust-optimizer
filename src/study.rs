@@ -105,14 +105,16 @@ where
         let sampler: Arc<dyn Sampler> = Arc::new(sampler);
         let completed_trials = Arc::new(RwLock::new(Vec::new()));
 
+        let pruner: Arc<dyn Pruner> = Arc::new(NopPruner);
+
         // For Study<f64>, set up a trial factory that provides sampler integration.
         // This uses Any downcasting to check at runtime whether V = f64.
-        let trial_factory = Self::make_trial_factory(&sampler, &completed_trials);
+        let trial_factory = Self::make_trial_factory(&sampler, &completed_trials, &pruner);
 
         Self {
             direction,
             sampler,
-            pruner: Arc::new(NopPruner),
+            pruner,
             completed_trials,
             next_trial_id: AtomicU64::new(0),
             trial_factory,
@@ -123,6 +125,7 @@ where
     fn make_trial_factory(
         sampler: &Arc<dyn Sampler>,
         completed_trials: &Arc<RwLock<Vec<CompletedTrial<V>>>>,
+        pruner: &Arc<dyn Pruner>,
     ) -> Option<Arc<dyn Fn(u64) -> Trial + Send + Sync>>
     where
         V: 'static,
@@ -135,8 +138,14 @@ where
         f64_trials.map(|trials| {
             let sampler = Arc::clone(sampler);
             let trials = Arc::clone(trials);
+            let pruner = Arc::clone(pruner);
             let factory: Arc<dyn Fn(u64) -> Trial + Send + Sync> = Arc::new(move |id| {
-                Trial::with_sampler(id, Arc::clone(&sampler), Arc::clone(&trials))
+                Trial::with_sampler(
+                    id,
+                    Arc::clone(&sampler),
+                    Arc::clone(&trials),
+                    Arc::clone(&pruner),
+                )
             });
             factory
         })
@@ -189,13 +198,14 @@ where
         V: 'static,
     {
         let sampler: Arc<dyn Sampler> = Arc::new(sampler);
+        let pruner: Arc<dyn Pruner> = Arc::new(pruner);
         let completed_trials = Arc::new(RwLock::new(Vec::new()));
-        let trial_factory = Self::make_trial_factory(&sampler, &completed_trials);
+        let trial_factory = Self::make_trial_factory(&sampler, &completed_trials, &pruner);
 
         Self {
             direction,
             sampler,
-            pruner: Arc::new(pruner),
+            pruner,
             completed_trials,
             next_trial_id: AtomicU64::new(0),
             trial_factory,
@@ -207,7 +217,8 @@ where
         V: 'static,
     {
         self.sampler = Arc::new(sampler);
-        self.trial_factory = Self::make_trial_factory(&self.sampler, &self.completed_trials);
+        self.trial_factory =
+            Self::make_trial_factory(&self.sampler, &self.completed_trials, &self.pruner);
     }
 
     /// Sets a new pruner for the study.
@@ -215,8 +226,13 @@ where
     /// # Arguments
     ///
     /// * `pruner` - The pruner to use for trial pruning.
-    pub fn set_pruner(&mut self, pruner: impl Pruner + 'static) {
+    pub fn set_pruner(&mut self, pruner: impl Pruner + 'static)
+    where
+        V: 'static,
+    {
         self.pruner = Arc::new(pruner);
+        self.trial_factory =
+            Self::make_trial_factory(&self.sampler, &self.completed_trials, &self.pruner);
     }
 
     /// Returns a reference to the study's pruner.
@@ -288,12 +304,13 @@ where
     /// ```
     pub fn complete_trial(&self, mut trial: Trial, value: V) {
         trial.set_complete();
-        let completed = CompletedTrial::new(
+        let completed = CompletedTrial::with_intermediate_values(
             trial.id(),
             trial.params().clone(),
             trial.distributions().clone(),
             trial.param_labels().clone(),
             value,
+            trial.intermediate_values().to_vec(),
         );
         self.completed_trials.write().push(completed);
     }

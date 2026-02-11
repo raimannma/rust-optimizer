@@ -27,6 +27,8 @@ pub struct CompletedTrial<V = f64> {
     pub param_labels: HashMap<ParamId, String>,
     /// The objective value returned by the objective function.
     pub value: V,
+    /// Intermediate objective values reported during the trial.
+    pub intermediate_values: Vec<(u64, f64)>,
 }
 
 impl<V> CompletedTrial<V> {
@@ -44,6 +46,26 @@ impl<V> CompletedTrial<V> {
             distributions,
             param_labels,
             value,
+            intermediate_values: Vec::new(),
+        }
+    }
+
+    /// Creates a new completed trial with intermediate values.
+    pub fn with_intermediate_values(
+        id: u64,
+        params: HashMap<ParamId, ParamValue>,
+        distributions: HashMap<ParamId, Distribution>,
+        param_labels: HashMap<ParamId, String>,
+        value: V,
+        intermediate_values: Vec<(u64, f64)>,
+    ) -> Self {
+        Self {
+            id,
+            params,
+            distributions,
+            param_labels,
+            value,
+            intermediate_values,
         }
     }
 

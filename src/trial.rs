@@ -9,6 +9,7 @@ use crate::distribution::Distribution;
 use crate::error::{Error, Result};
 use crate::param::ParamValue;
 use crate::parameter::{ParamId, Parameter};
+use crate::pruner::Pruner;
 use crate::sampler::{CompletedTrial, Sampler};
 use crate::types::TrialState;
 
@@ -36,6 +37,10 @@ pub struct Trial {
     sampler: Option<Arc<dyn Sampler>>,
     /// Access to the history of completed trials (shared with Study).
     history: Option<Arc<RwLock<Vec<CompletedTrial<f64>>>>>,
+    /// Intermediate objective values reported at each step.
+    intermediate_values: Vec<(u64, f64)>,
+    /// The pruner used to decide whether to stop this trial early.
+    pruner: Option<Arc<dyn Pruner>>,
 }
 
 impl core::fmt::Debug for Trial {
@@ -48,6 +53,8 @@ impl core::fmt::Debug for Trial {
             .field("param_labels", &self.param_labels)
             .field("has_sampler", &self.sampler.is_some())
             .field("has_history", &self.history.is_some())
+            .field("intermediate_values", &self.intermediate_values)
+            .field("has_pruner", &self.pruner.is_some())
             .finish()
     }
 }
@@ -83,6 +90,8 @@ impl Trial {
             param_labels: HashMap::new(),
             sampler: None,
             history: None,
+            intermediate_values: Vec::new(),
+            pruner: None,
         }
     }
 
@@ -100,6 +109,7 @@ impl Trial {
         id: u64,
         sampler: Arc<dyn Sampler>,
         history: Arc<RwLock<Vec<CompletedTrial<f64>>>>,
+        pruner: Arc<dyn Pruner>,
     ) -> Self {
         Self {
             id,
@@ -109,6 +119,8 @@ impl Trial {
             param_labels: HashMap::new(),
             sampler: Some(sampler),
             history: Some(history),
+            intermediate_values: Vec::new(),
+            pruner: Some(pruner),
         }
     }
 
@@ -157,6 +169,44 @@ impl Trial {
     #[must_use]
     pub fn param_labels(&self) -> &HashMap<ParamId, String> {
         &self.param_labels
+    }
+
+    /// Reports an intermediate objective value at a given step.
+    ///
+    /// Steps should be monotonically increasing (e.g., epoch number).
+    /// Duplicate steps overwrite the previous value.
+    pub fn report(&mut self, step: u64, value: f64) {
+        if let Some(entry) = self
+            .intermediate_values
+            .iter_mut()
+            .find(|(s, _)| *s == step)
+        {
+            entry.1 = value;
+        } else {
+            self.intermediate_values.push((step, value));
+        }
+    }
+
+    /// Ask whether this trial should be pruned at the current step.
+    ///
+    /// Returns `true` if the pruner recommends stopping this trial.
+    /// The caller should return `Err(TrialPruned)` from the objective.
+    #[must_use]
+    pub fn should_prune(&self) -> bool {
+        let (Some(pruner), Some(history)) = (&self.pruner, &self.history) else {
+            return false;
+        };
+        let Some(&(step, _)) = self.intermediate_values.last() else {
+            return false;
+        };
+        let history_guard = history.read();
+        pruner.should_prune(self.id, step, &self.intermediate_values, &history_guard)
+    }
+
+    /// Returns all intermediate values reported so far.
+    #[must_use]
+    pub fn intermediate_values(&self) -> &[(u64, f64)] {
+        &self.intermediate_values
     }
 
     /// Sets the trial state to Complete.
