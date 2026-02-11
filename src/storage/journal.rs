@@ -115,12 +115,19 @@ impl<V: Serialize + DeserializeOwned + Send + Sync> Storage<V> for JournalStorag
         self.memory.trials_arc()
     }
 
+    fn next_trial_id(&self) -> u64 {
+        self.memory.next_trial_id()
+    }
+
     fn refresh(&self) -> bool {
         let Ok(loaded) = load_trials_from_file::<V>(&self.path) else {
             return false;
         };
         let mut guard = self.memory.trials_arc().write();
         if loaded.len() > guard.len() {
+            if let Some(max_id) = loaded.iter().map(|t| t.id).max() {
+                self.memory.bump_next_id(max_id + 1);
+            }
             *guard = loaded;
             true
         } else {

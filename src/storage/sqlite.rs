@@ -98,6 +98,10 @@ impl<V: Serialize + DeserializeOwned + Send + Sync> Storage<V> for SqliteStorage
         self.memory.trials_arc()
     }
 
+    fn next_trial_id(&self) -> u64 {
+        self.memory.next_trial_id()
+    }
+
     fn refresh(&self) -> bool {
         let conn = self.conn.lock();
         let Ok(loaded) = load_all::<V>(&conn) else {
@@ -105,6 +109,9 @@ impl<V: Serialize + DeserializeOwned + Send + Sync> Storage<V> for SqliteStorage
         };
         let mut guard = self.memory.trials_arc().write();
         if loaded.len() > guard.len() {
+            if let Some(max_id) = loaded.iter().map(|t| t.id).max() {
+                self.memory.bump_next_id(max_id + 1);
+            }
             *guard = loaded;
             true
         } else {

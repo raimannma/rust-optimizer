@@ -42,6 +42,12 @@ pub trait Storage<V>: Send + Sync {
     /// lock for efficient, allocation-free access.
     fn trials_arc(&self) -> &Arc<RwLock<Vec<CompletedTrial<V>>>>;
 
+    /// Atomically returns the next unique trial ID.
+    ///
+    /// Each call increments an internal counter so that consecutive
+    /// calls always produce distinct IDs.
+    fn next_trial_id(&self) -> u64;
+
     /// Reload from an external source (e.g. a file written by another
     /// process).  Returns `true` if the in-memory buffer was updated.
     ///

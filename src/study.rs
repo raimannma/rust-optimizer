@@ -6,7 +6,6 @@ use core::fmt;
 use core::future::Future;
 use core::marker::PhantomData;
 use core::ops::ControlFlow;
-use core::sync::atomic::{AtomicU64, Ordering};
 use core::time::Duration;
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
@@ -52,8 +51,6 @@ where
     pruner: Arc<dyn Pruner>,
     /// Trial storage backend (default: [`MemoryStorage`](crate::storage::MemoryStorage)).
     storage: Arc<dyn crate::storage::Storage<V>>,
-    /// Counter for generating unique trial IDs.
-    next_trial_id: AtomicU64,
     /// Optional factory for creating sampler-aware trials.
     /// Set automatically for `Study<f64>` so that `create_trial()` and all
     /// optimization methods use the sampler without requiring `_with_sampler` suffixes.
@@ -240,26 +237,18 @@ where
         let storage: Arc<dyn crate::storage::Storage<V>> = Arc::new(storage);
         let trial_factory = Self::make_trial_factory(&sampler, &storage, &pruner);
 
-        let next_id = storage
-            .trials_arc()
-            .read()
-            .iter()
-            .map(|t| t.id)
-            .max()
-            .map_or(0, |id| id + 1);
-
         Self {
             direction,
             sampler,
             pruner,
             storage,
-            next_trial_id: AtomicU64::new(next_id),
             trial_factory,
             enqueued_params: Arc::new(Mutex::new(VecDeque::new())),
         }
     }
 
     /// Returns the optimization direction.
+    #[must_use]
     pub fn direction(&self) -> Direction {
         self.direction
     }
@@ -316,7 +305,6 @@ where
             sampler,
             pruner,
             storage,
-            next_trial_id: AtomicU64::new(0),
             trial_factory,
             enqueued_params: Arc::new(Mutex::new(VecDeque::new())),
         }
@@ -344,6 +332,7 @@ where
     }
 
     /// Returns a reference to the study's pruner.
+    #[must_use]
     pub fn pruner(&self) -> &dyn Pruner {
         &*self.pruner
     }
@@ -423,7 +412,7 @@ where
 
     /// Generates the next unique trial ID.
     pub(crate) fn next_trial_id(&self) -> u64 {
-        self.next_trial_id.fetch_add(1, Ordering::SeqCst)
+        self.storage.next_trial_id()
     }
 
     /// Creates a new trial with a unique ID.
@@ -448,13 +437,9 @@ where
     /// let trial2 = study.create_trial();
     /// assert_eq!(trial2.id(), 1);
     /// ```
+    #[must_use]
     pub fn create_trial(&self) -> Trial {
-        if self.storage.refresh() {
-            let trials = self.storage.trials_arc().read();
-            if let Some(max_id) = trials.iter().map(|t| t.id).max() {
-                self.next_trial_id.fetch_max(max_id + 1, Ordering::SeqCst);
-            }
-        }
+        self.storage.refresh();
 
         let id = self.next_trial_id();
         let mut trial = if let Some(factory) = &self.trial_factory {
@@ -565,6 +550,7 @@ where
     /// let value = x_val * x_val;
     /// study.tell(trial, Ok::<_, &str>(value));
     /// ```
+    #[must_use]
     pub fn ask(&self) -> Trial {
         self.create_trial()
     }
@@ -649,6 +635,7 @@ where
     ///     println!("Trial {} has value {:?}", completed.id, completed.value);
     /// }
     /// ```
+    #[must_use]
     pub fn trials(&self) -> Vec<CompletedTrial<V>>
     where
         V: Clone,
@@ -675,11 +662,13 @@ where
     /// study.complete_trial(trial, 0.5);
     /// assert_eq!(study.n_trials(), 1);
     /// ```
+    #[must_use]
     pub fn n_trials(&self) -> usize {
         self.storage.trials_arc().read().len()
     }
 
     /// Returns the number of pruned trials.
+    #[must_use]
     pub fn n_pruned_trials(&self) -> usize {
         self.storage
             .trials_arc()
@@ -821,6 +810,7 @@ where
     /// Only includes completed trials (not failed or pruned).
     ///
     /// If fewer than `n` completed trials exist, returns all of them.
+    #[must_use]
     pub fn top_trials(&self, n: usize) -> Vec<CompletedTrial<V>>
     where
         V: Clone,
@@ -1987,6 +1977,7 @@ where
     ///
     /// This clones the internal trial list, so it is suitable for
     /// analysis and iteration but not for hot paths.
+    #[must_use]
     pub fn iter(&self) -> std::vec::IntoIter<CompletedTrial<V>> {
         self.trials().into_iter()
     }
@@ -2234,6 +2225,7 @@ impl Study<f64> {
         since = "0.2.0",
         note = "use `create_trial()` instead — it now uses the sampler automatically for Study<f64>"
     )]
+    #[must_use]
     pub fn create_trial_with_sampler(&self) -> Trial {
         self.create_trial()
     }
@@ -2336,20 +2328,11 @@ impl<V: PartialOrd + Send + Sync + 'static> Study<V> {
         let storage: Arc<dyn crate::storage::Storage<V>> = Arc::new(storage);
         let trial_factory = Self::make_trial_factory(&sampler, &storage, &pruner);
 
-        let next_id = storage
-            .trials_arc()
-            .read()
-            .iter()
-            .map(|t| t.id)
-            .max()
-            .map_or(0, |id| id + 1);
-
         Self {
             direction,
             sampler,
             pruner,
             storage,
-            next_trial_id: AtomicU64::new(next_id),
             trial_factory,
             enqueued_params: Arc::new(Mutex::new(VecDeque::new())),
         }
@@ -2451,20 +2434,11 @@ impl<V: PartialOrd> StudyBuilder<V> {
         let storage: Arc<dyn crate::storage::Storage<V>> = Arc::from(storage);
         let trial_factory = Study::make_trial_factory(&sampler, &storage, &pruner);
 
-        let next_id = storage
-            .trials_arc()
-            .read()
-            .iter()
-            .map(|t| t.id)
-            .max()
-            .map_or(0, |id| id + 1);
-
         Study {
             direction: self.direction,
             sampler,
             pruner,
             storage,
-            next_trial_id: AtomicU64::new(next_id),
             trial_factory,
             enqueued_params: Arc::new(Mutex::new(VecDeque::new())),
         }
@@ -2590,11 +2564,13 @@ impl<V: PartialOrd + Clone + serde::Serialize> Study<V> {
     /// Returns an I/O error if the file cannot be created or written.
     pub fn save(&self, path: impl AsRef<std::path::Path>) -> std::io::Result<()> {
         let path = path.as_ref();
+        let trials = self.trials();
+        let next_trial_id = trials.iter().map(|t| t.id).max().map_or(0, |id| id + 1);
         let snapshot = StudySnapshot {
             version: 1,
             direction: self.direction,
-            trials: self.trials(),
-            next_trial_id: self.next_trial_id.load(Ordering::Relaxed),
+            trials,
+            next_trial_id,
             metadata: HashMap::new(),
         };
 
@@ -2660,12 +2636,12 @@ impl<V: PartialOrd + Send + Sync + Clone + serde::de::DeserializeOwned + 'static
         let file = std::fs::File::open(path)?;
         let snapshot: StudySnapshot<V> = serde_json::from_reader(file)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        let study = Study::new(snapshot.direction);
-        *study.storage.trials_arc().write() = snapshot.trials;
-        study
-            .next_trial_id
-            .store(snapshot.next_trial_id, Ordering::Relaxed);
-        Ok(study)
+        let storage = crate::storage::MemoryStorage::with_trials(snapshot.trials);
+        Ok(Self::with_sampler_and_storage(
+            snapshot.direction,
+            RandomSampler::new(),
+            storage,
+        ))
     }
 }
 
