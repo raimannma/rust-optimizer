@@ -370,6 +370,7 @@ jobs:
       - cross-platform
       - cross-targets
       - typos
+      - bench-check
     steps:
       - uses: actions/checkout@v6
       - name: Install Rust
