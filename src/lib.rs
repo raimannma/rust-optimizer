@@ -219,6 +219,8 @@ macro_rules! trace_debug {
 
 mod distribution;
 mod error;
+#[cfg(feature = "fanova")]
+mod fanova;
 mod importance;
 mod kde;
 pub mod multi_objective;
@@ -234,6 +236,8 @@ mod types;
 mod visualization;
 
 pub use error::{Error, Result, TrialPruned};
+#[cfg(feature = "fanova")]
+pub use fanova::{FanovaConfig, FanovaResult};
 pub use multi_objective::{MultiObjectiveSampler, MultiObjectiveStudy, MultiObjectiveTrial};
 #[cfg(feature = "derive")]
 pub use optimizer_derive::Categorical;
@@ -274,6 +278,8 @@ pub mod prelude {
     pub use optimizer_derive::Categorical as DeriveCategory;
 
     pub use crate::error::{Error, Result, TrialPruned};
+    #[cfg(feature = "fanova")]
+    pub use crate::fanova::{FanovaConfig, FanovaResult};
     pub use crate::multi_objective::{MultiObjectiveStudy, MultiObjectiveTrial};
     pub use crate::param::ParamValue;
     pub use crate::parameter::{

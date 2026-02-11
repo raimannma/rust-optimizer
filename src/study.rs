@@ -2027,6 +2027,110 @@ where
 
         scores
     }
+
+    /// Computes parameter importance using fANOVA (functional ANOVA) with
+    /// default configuration.
+    ///
+    /// Fits a random forest to the trial data and decomposes variance into
+    /// per-parameter main effects and pairwise interaction effects. This is
+    /// more accurate than correlation-based importance ([`Self::param_importance`])
+    /// and can detect non-linear relationships and parameter interactions.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::NoCompletedTrials`] if fewer than 2 trials have completed.
+    #[cfg(feature = "fanova")]
+    pub fn fanova(&self) -> crate::Result<crate::fanova::FanovaResult> {
+        self.fanova_with_config(&crate::fanova::FanovaConfig::default())
+    }
+
+    /// Computes parameter importance using fANOVA with custom configuration.
+    ///
+    /// See [`Self::fanova`] for details. The [`FanovaConfig`](crate::fanova::FanovaConfig)
+    /// allows tuning the number of trees, tree depth, and random seed.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::NoCompletedTrials`] if fewer than 2 trials have completed.
+    #[cfg(feature = "fanova")]
+    #[allow(clippy::cast_precision_loss)]
+    pub fn fanova_with_config(
+        &self,
+        config: &crate::fanova::FanovaConfig,
+    ) -> crate::Result<crate::fanova::FanovaResult> {
+        use std::collections::BTreeSet;
+
+        use crate::fanova::compute_fanova;
+        use crate::param::ParamValue;
+        use crate::types::TrialState;
+
+        let trials = self.completed_trials.read();
+        let complete: Vec<_> = trials
+            .iter()
+            .filter(|t| t.state == TrialState::Complete)
+            .collect();
+
+        if complete.len() < 2 {
+            return Err(crate::Error::NoCompletedTrials);
+        }
+
+        // Collect all parameter IDs in a stable order.
+        let all_param_ids: Vec<_> = {
+            let set: BTreeSet<_> = complete.iter().flat_map(|t| t.params.keys()).collect();
+            set.into_iter().collect()
+        };
+
+        if all_param_ids.is_empty() {
+            return Ok(crate::fanova::FanovaResult {
+                main_effects: Vec::new(),
+                interactions: Vec::new(),
+            });
+        }
+
+        // Build feature matrix (only trials that have all parameters).
+        let mut data = Vec::new();
+        let mut targets = Vec::new();
+
+        for trial in &complete {
+            let mut row = Vec::with_capacity(all_param_ids.len());
+            let mut has_all = true;
+
+            for &pid in &all_param_ids {
+                if let Some(pv) = trial.params.get(pid) {
+                    row.push(match *pv {
+                        ParamValue::Float(v) => v,
+                        ParamValue::Int(v) => v as f64,
+                        ParamValue::Categorical(v) => v as f64,
+                    });
+                } else {
+                    has_all = false;
+                    break;
+                }
+            }
+
+            if has_all {
+                data.push(row);
+                targets.push(trial.value.clone().into());
+            }
+        }
+
+        if data.len() < 2 {
+            return Err(crate::Error::NoCompletedTrials);
+        }
+
+        // Build feature names from parameter labels.
+        let feature_names: Vec<String> = all_param_ids
+            .iter()
+            .map(|&pid| {
+                complete
+                    .iter()
+                    .find_map(|t| t.param_labels.get(pid))
+                    .map_or_else(|| pid.to_string(), Clone::clone)
+            })
+            .collect();
+
+        Ok(compute_fanova(&data, &targets, &feature_names, config))
+    }
 }
 
 impl<V> IntoIterator for &Study<V>

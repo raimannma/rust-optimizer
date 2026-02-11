@@ -36,6 +36,7 @@ tracing = ["dep:tracing"]
 sobol = ["dep:sobol_burley"]
 cma-es = ["dep:nalgebra"]
 visualization = []
+fanova = []
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
