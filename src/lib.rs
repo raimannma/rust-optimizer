@@ -202,8 +202,8 @@ pub use parameter::{
     BoolParam, Categorical, CategoricalParam, EnumParam, FloatParam, IntParam, ParamId, Parameter,
 };
 pub use pruner::{
-    MedianPruner, NopPruner, PatientPruner, PercentilePruner, Pruner, SuccessiveHalvingPruner,
-    ThresholdPruner,
+    HyperbandPruner, MedianPruner, NopPruner, PatientPruner, PercentilePruner, Pruner,
+    SuccessiveHalvingPruner, ThresholdPruner,
 };
 pub use sampler::CompletedTrial;
 pub use sampler::grid::GridSearchSampler;
@@ -228,8 +228,8 @@ pub mod prelude {
         BoolParam, Categorical, CategoricalParam, EnumParam, FloatParam, IntParam, Parameter,
     };
     pub use crate::pruner::{
-        MedianPruner, NopPruner, PatientPruner, PercentilePruner, Pruner, SuccessiveHalvingPruner,
-        ThresholdPruner,
+        HyperbandPruner, MedianPruner, NopPruner, PatientPruner, PercentilePruner, Pruner,
+        SuccessiveHalvingPruner, ThresholdPruner,
     };
     pub use crate::sampler::CompletedTrial;
     pub use crate::sampler::grid::GridSearchSampler;

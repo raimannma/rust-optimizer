@@ -4,6 +4,7 @@
 //! intermediate values compared to other trials. This is useful for
 //! discarding unpromising trials before they complete, saving compute.
 
+mod hyperband;
 mod median;
 mod nop;
 mod patient;
@@ -11,6 +12,7 @@ pub(crate) mod percentile;
 mod successive_halving;
 mod threshold;
 
+pub use hyperband::HyperbandPruner;
 pub use median::MedianPruner;
 pub use nop::NopPruner;
 pub use patient::PatientPruner;
