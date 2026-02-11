@@ -81,6 +81,56 @@ where
         Self::with_sampler(direction, RandomSampler::new())
     }
 
+    /// Creates a study that minimizes the objective value.
+    ///
+    /// This is a shorthand for `Study::with_sampler(Direction::Minimize, sampler)`.
+    ///
+    /// # Arguments
+    ///
+    /// * `sampler` - The sampler to use for parameter sampling.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use optimizer::Study;
+    /// use optimizer::sampler::tpe::TpeSampler;
+    ///
+    /// let study: Study<f64> = Study::minimize(TpeSampler::new());
+    /// assert_eq!(study.direction(), optimizer::Direction::Minimize);
+    /// ```
+    #[must_use]
+    pub fn minimize(sampler: impl Sampler + 'static) -> Self
+    where
+        V: 'static,
+    {
+        Self::with_sampler(Direction::Minimize, sampler)
+    }
+
+    /// Creates a study that maximizes the objective value.
+    ///
+    /// This is a shorthand for `Study::with_sampler(Direction::Maximize, sampler)`.
+    ///
+    /// # Arguments
+    ///
+    /// * `sampler` - The sampler to use for parameter sampling.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use optimizer::Study;
+    /// use optimizer::sampler::tpe::TpeSampler;
+    ///
+    /// let study: Study<f64> = Study::maximize(TpeSampler::new());
+    /// assert_eq!(study.direction(), optimizer::Direction::Maximize);
+    /// ```
+    #[must_use]
+    pub fn maximize(sampler: impl Sampler + 'static) -> Self
+    where
+        V: 'static,
+    {
+        Self::with_sampler(Direction::Maximize, sampler)
+    }
+
     /// Creates a new study with a custom sampler.
     ///
     /// # Arguments
