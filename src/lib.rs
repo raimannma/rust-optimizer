@@ -21,6 +21,7 @@
 //! - **CMA-ES** - Covariance Matrix Adaptation Evolution Strategy for continuous optimization (requires `cma-es` feature)
 //! - **BOHB** - Bayesian Optimization + `HyperBand` for budget-aware TPE sampling
 //! - **NSGA-II** - Non-dominated Sorting Genetic Algorithm II for multi-objective optimization
+//! - **MOTPE** - Multi-Objective Tree-Parzen Estimator for Bayesian multi-objective optimization
 //!
 //! Additional features include:
 //!
@@ -246,6 +247,7 @@ pub use sampler::bohb::BohbSampler;
 #[cfg(feature = "cma-es")]
 pub use sampler::cma_es::CmaEsSampler;
 pub use sampler::grid::GridSearchSampler;
+pub use sampler::motpe::MotpeSampler;
 pub use sampler::nsga2::Nsga2Sampler;
 pub use sampler::random::RandomSampler;
 #[cfg(feature = "sobol")]
@@ -281,6 +283,7 @@ pub mod prelude {
     #[cfg(feature = "cma-es")]
     pub use crate::sampler::cma_es::CmaEsSampler;
     pub use crate::sampler::grid::GridSearchSampler;
+    pub use crate::sampler::motpe::MotpeSampler;
     pub use crate::sampler::nsga2::Nsga2Sampler;
     pub use crate::sampler::random::RandomSampler;
     #[cfg(feature = "sobol")]

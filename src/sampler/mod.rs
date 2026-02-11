@@ -4,6 +4,7 @@ pub mod bohb;
 #[cfg(feature = "cma-es")]
 pub mod cma_es;
 pub mod grid;
+pub mod motpe;
 pub mod nsga2;
 pub mod random;
 #[cfg(feature = "sobol")]
