@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 use parking_lot::RwLock;
 
+use crate::pruner::{NopPruner, Pruner};
 use crate::sampler::random::RandomSampler;
 use crate::sampler::{CompletedTrial, Sampler};
 use crate::trial::Trial;
@@ -40,6 +41,8 @@ where
     direction: Direction,
     /// The sampler used to generate parameter values.
     sampler: Arc<dyn Sampler>,
+    /// The pruner used to decide whether to stop trials early.
+    pruner: Arc<dyn Pruner>,
     /// Completed trials (wrapped in Arc for sharing with Trial).
     completed_trials: Arc<RwLock<Vec<CompletedTrial<V>>>>,
     /// Counter for generating unique trial IDs.
@@ -109,6 +112,7 @@ where
         Self {
             direction,
             sampler,
+            pruner: Arc::new(NopPruner),
             completed_trials,
             next_trial_id: AtomicU64::new(0),
             trial_factory,
@@ -158,12 +162,66 @@ where
     /// let mut study: Study<f64> = Study::new(Direction::Minimize);
     /// study.set_sampler(TpeSampler::new());
     /// ```
+    /// Creates a new study with a custom sampler and pruner.
+    ///
+    /// # Arguments
+    ///
+    /// * `direction` - Whether to minimize or maximize the objective function.
+    /// * `sampler` - The sampler to use for parameter sampling.
+    /// * `pruner` - The pruner to use for trial pruning.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use optimizer::pruner::NopPruner;
+    /// use optimizer::sampler::random::RandomSampler;
+    /// use optimizer::{Direction, Study};
+    ///
+    /// let sampler = RandomSampler::with_seed(42);
+    /// let study: Study<f64> = Study::with_sampler_and_pruner(Direction::Minimize, sampler, NopPruner);
+    /// ```
+    pub fn with_sampler_and_pruner(
+        direction: Direction,
+        sampler: impl Sampler + 'static,
+        pruner: impl Pruner + 'static,
+    ) -> Self
+    where
+        V: 'static,
+    {
+        let sampler: Arc<dyn Sampler> = Arc::new(sampler);
+        let completed_trials = Arc::new(RwLock::new(Vec::new()));
+        let trial_factory = Self::make_trial_factory(&sampler, &completed_trials);
+
+        Self {
+            direction,
+            sampler,
+            pruner: Arc::new(pruner),
+            completed_trials,
+            next_trial_id: AtomicU64::new(0),
+            trial_factory,
+        }
+    }
+
     pub fn set_sampler(&mut self, sampler: impl Sampler + 'static)
     where
         V: 'static,
     {
         self.sampler = Arc::new(sampler);
         self.trial_factory = Self::make_trial_factory(&self.sampler, &self.completed_trials);
+    }
+
+    /// Sets a new pruner for the study.
+    ///
+    /// # Arguments
+    ///
+    /// * `pruner` - The pruner to use for trial pruning.
+    pub fn set_pruner(&mut self, pruner: impl Pruner + 'static) {
+        self.pruner = Arc::new(pruner);
+    }
+
+    /// Returns a reference to the study's pruner.
+    pub fn pruner(&self) -> &dyn Pruner {
+        &*self.pruner
     }
 
     /// Generates the next unique trial ID.

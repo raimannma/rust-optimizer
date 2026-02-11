@@ -188,6 +188,7 @@ mod error;
 mod kde;
 mod param;
 pub mod parameter;
+pub mod pruner;
 pub mod sampler;
 mod study;
 mod trial;
@@ -200,6 +201,7 @@ pub use param::ParamValue;
 pub use parameter::{
     BoolParam, Categorical, CategoricalParam, EnumParam, FloatParam, IntParam, ParamId, Parameter,
 };
+pub use pruner::{NopPruner, Pruner};
 pub use sampler::CompletedTrial;
 pub use sampler::grid::GridSearchSampler;
 pub use sampler::random::RandomSampler;
@@ -222,6 +224,7 @@ pub mod prelude {
     pub use crate::parameter::{
         BoolParam, Categorical, CategoricalParam, EnumParam, FloatParam, IntParam, Parameter,
     };
+    pub use crate::pruner::{NopPruner, Pruner};
     pub use crate::sampler::CompletedTrial;
     pub use crate::sampler::grid::GridSearchSampler;
     pub use crate::sampler::random::RandomSampler;
