@@ -5,7 +5,9 @@ use core::any::Any;
 use core::future::Future;
 use core::ops::ControlFlow;
 use core::sync::atomic::{AtomicU64, Ordering};
+use core::time::Duration;
 use std::sync::Arc;
+use std::time::Instant;
 
 use parking_lot::RwLock;
 
@@ -987,6 +989,324 @@ where
         }
 
         // Return error if no trials completed successfully
+        let has_complete = self
+            .completed_trials
+            .read()
+            .iter()
+            .any(|t| t.state == TrialState::Complete);
+        if !has_complete {
+            return Err(crate::Error::NoCompletedTrials);
+        }
+
+        Ok(())
+    }
+    /// Runs optimization until the given duration has elapsed.
+    ///
+    /// Trials that are already running when the timeout is reached will
+    /// complete — we never interrupt mid-trial. The actual elapsed time
+    /// may therefore slightly exceed the specified duration.
+    ///
+    /// # Arguments
+    ///
+    /// * `duration` - The maximum wall-clock time to spend on optimization.
+    /// * `objective` - A closure that takes a mutable reference to a `Trial` and
+    ///   returns the objective value or an error.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::NoCompletedTrials` if no trials completed successfully
+    /// before the timeout.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::time::Duration;
+    ///
+    /// use optimizer::parameter::{FloatParam, Parameter};
+    /// use optimizer::sampler::random::RandomSampler;
+    /// use optimizer::{Direction, Study};
+    ///
+    /// let sampler = RandomSampler::with_seed(42);
+    /// let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
+    ///
+    /// let x_param = FloatParam::new(-10.0, 10.0);
+    ///
+    /// study
+    ///     .optimize_until(Duration::from_millis(100), |trial| {
+    ///         let x = x_param.suggest(trial)?;
+    ///         Ok::<_, optimizer::Error>(x * x)
+    ///     })
+    ///     .unwrap();
+    ///
+    /// assert!(study.n_trials() > 0);
+    /// ```
+    pub fn optimize_until<F, E>(&self, duration: Duration, mut objective: F) -> crate::Result<()>
+    where
+        F: FnMut(&mut Trial) -> core::result::Result<V, E>,
+        E: ToString + 'static,
+        V: Default,
+    {
+        let deadline = Instant::now() + duration;
+        while Instant::now() < deadline {
+            let mut trial = self.create_trial();
+
+            match objective(&mut trial) {
+                Ok(value) => {
+                    self.complete_trial(trial, value);
+                }
+                Err(e) => {
+                    if is_trial_pruned(&e) {
+                        self.prune_trial(trial);
+                    } else {
+                        self.fail_trial(trial, e.to_string());
+                    }
+                }
+            }
+        }
+
+        let has_complete = self
+            .completed_trials
+            .read()
+            .iter()
+            .any(|t| t.state == TrialState::Complete);
+        if !has_complete {
+            return Err(crate::Error::NoCompletedTrials);
+        }
+
+        Ok(())
+    }
+
+    /// Runs optimization until the given duration has elapsed, with a callback.
+    ///
+    /// Like [`optimize_until`](Self::optimize_until), but calls a callback after
+    /// each completed trial. The callback can stop optimization early by returning
+    /// `ControlFlow::Break(())`.
+    ///
+    /// # Arguments
+    ///
+    /// * `duration` - The maximum wall-clock time to spend on optimization.
+    /// * `objective` - A closure that takes a mutable reference to a `Trial` and
+    ///   returns the objective value or an error.
+    /// * `callback` - A closure called after each successful trial. Returns
+    ///   `ControlFlow::Continue(())` to proceed or `ControlFlow::Break(())` to stop.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::NoCompletedTrials` if no trials completed successfully.
+    /// Returns `Error::Internal` if a completed trial is not found after adding.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::ops::ControlFlow;
+    /// use std::time::Duration;
+    ///
+    /// use optimizer::parameter::{FloatParam, Parameter};
+    /// use optimizer::sampler::random::RandomSampler;
+    /// use optimizer::{Direction, Study};
+    ///
+    /// let sampler = RandomSampler::with_seed(42);
+    /// let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
+    ///
+    /// let x_param = FloatParam::new(-10.0, 10.0);
+    ///
+    /// study
+    ///     .optimize_until_with_callback(
+    ///         Duration::from_secs(1),
+    ///         |trial| {
+    ///             let x = x_param.suggest(trial)?;
+    ///             Ok::<_, optimizer::Error>(x * x)
+    ///         },
+    ///         |_study, completed_trial| {
+    ///             if completed_trial.value < 1.0 {
+    ///                 ControlFlow::Break(())
+    ///             } else {
+    ///                 ControlFlow::Continue(())
+    ///             }
+    ///         },
+    ///     )
+    ///     .unwrap();
+    ///
+    /// assert!(study.n_trials() > 0);
+    /// ```
+    pub fn optimize_until_with_callback<F, C, E>(
+        &self,
+        duration: Duration,
+        mut objective: F,
+        mut callback: C,
+    ) -> crate::Result<()>
+    where
+        V: Clone + Default,
+        F: FnMut(&mut Trial) -> core::result::Result<V, E>,
+        C: FnMut(&Study<V>, &CompletedTrial<V>) -> ControlFlow<()>,
+        E: ToString + 'static,
+    {
+        let deadline = Instant::now() + duration;
+        while Instant::now() < deadline {
+            let mut trial = self.create_trial();
+
+            match objective(&mut trial) {
+                Ok(value) => {
+                    self.complete_trial(trial, value);
+
+                    let trials = self.completed_trials.read();
+                    let Some(completed) = trials.last() else {
+                        return Err(crate::Error::Internal(
+                            "completed trial not found after adding",
+                        ));
+                    };
+
+                    let completed_clone = completed.clone();
+                    drop(trials);
+
+                    if let ControlFlow::Break(()) = callback(self, &completed_clone) {
+                        break;
+                    }
+                }
+                Err(e) => {
+                    if is_trial_pruned(&e) {
+                        self.prune_trial(trial);
+                    } else {
+                        self.fail_trial(trial, e.to_string());
+                    }
+                }
+            }
+        }
+
+        let has_complete = self
+            .completed_trials
+            .read()
+            .iter()
+            .any(|t| t.state == TrialState::Complete);
+        if !has_complete {
+            return Err(crate::Error::NoCompletedTrials);
+        }
+
+        Ok(())
+    }
+
+    /// Runs optimization asynchronously until the given duration has elapsed.
+    ///
+    /// The async variant of [`optimize_until`](Self::optimize_until). Trials are
+    /// run sequentially, but the objective function can be async.
+    ///
+    /// # Arguments
+    ///
+    /// * `duration` - The maximum wall-clock time to spend on optimization.
+    /// * `objective` - A function that takes a `Trial` and returns a `Future`
+    ///   that resolves to a tuple of `(Trial, Result<V, E>)`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::NoCompletedTrials` if no trials completed successfully.
+    #[cfg(feature = "async")]
+    pub async fn optimize_until_async<F, Fut, E>(
+        &self,
+        duration: Duration,
+        objective: F,
+    ) -> crate::Result<()>
+    where
+        F: Fn(Trial) -> Fut,
+        Fut: Future<Output = core::result::Result<(Trial, V), E>>,
+        E: ToString,
+    {
+        let deadline = Instant::now() + duration;
+        while Instant::now() < deadline {
+            let trial = self.create_trial();
+
+            match objective(trial).await {
+                Ok((trial, value)) => {
+                    self.complete_trial(trial, value);
+                }
+                Err(e) => {
+                    let _ = e.to_string();
+                }
+            }
+        }
+
+        let has_complete = self
+            .completed_trials
+            .read()
+            .iter()
+            .any(|t| t.state == TrialState::Complete);
+        if !has_complete {
+            return Err(crate::Error::NoCompletedTrials);
+        }
+
+        Ok(())
+    }
+
+    /// Runs optimization with bounded parallelism until the given duration has elapsed.
+    ///
+    /// The parallel variant of [`optimize_until`](Self::optimize_until). Runs up to
+    /// `concurrency` trials simultaneously using async tasks. New trials are spawned
+    /// as long as the deadline has not been reached; trials already running when the
+    /// deadline passes will complete.
+    ///
+    /// # Arguments
+    ///
+    /// * `duration` - The maximum wall-clock time to spend spawning new trials.
+    /// * `concurrency` - The maximum number of trials to run simultaneously.
+    /// * `objective` - A function that takes a `Trial` and returns a `Future`
+    ///   that resolves to a tuple of `(Trial, V)` or an error.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::NoCompletedTrials` if no trials completed successfully.
+    /// Returns `Error::TaskError` if the semaphore is closed or a spawned task panics.
+    #[cfg(feature = "async")]
+    pub async fn optimize_until_parallel<F, Fut, E>(
+        &self,
+        duration: Duration,
+        concurrency: usize,
+        objective: F,
+    ) -> crate::Result<()>
+    where
+        F: Fn(Trial) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = core::result::Result<(Trial, V), E>> + Send,
+        E: ToString + Send + 'static,
+        V: Send + 'static,
+    {
+        use tokio::sync::Semaphore;
+
+        let deadline = Instant::now() + duration;
+        let semaphore = Arc::new(Semaphore::new(concurrency));
+        let objective = Arc::new(objective);
+
+        let mut handles = Vec::new();
+
+        while Instant::now() < deadline {
+            let permit = semaphore
+                .clone()
+                .acquire_owned()
+                .await
+                .map_err(|e| crate::Error::TaskError(e.to_string()))?;
+            let trial = self.create_trial();
+            let objective = Arc::clone(&objective);
+
+            let handle = tokio::spawn(async move {
+                let result = objective(trial).await;
+                drop(permit);
+                result
+            });
+
+            handles.push(handle);
+        }
+
+        for handle in handles {
+            match handle
+                .await
+                .map_err(|e| crate::Error::TaskError(e.to_string()))?
+            {
+                Ok((trial, value)) => {
+                    self.complete_trial(trial, value);
+                }
+                Err(e) => {
+                    let _ = e.to_string();
+                }
+            }
+        }
+
         let has_complete = self
             .completed_trials
             .read()

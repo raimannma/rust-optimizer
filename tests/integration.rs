@@ -1363,3 +1363,162 @@ fn test_completed_trial_get() {
     assert!((-10.0..=10.0).contains(&x_val));
     assert!((1..=10).contains(&n_val));
 }
+
+// =============================================================================
+// Tests for timeout-based optimization
+// =============================================================================
+
+#[test]
+fn test_optimize_until_runs_for_approximately_specified_duration() {
+    use std::time::{Duration, Instant};
+
+    let study: Study<f64> = Study::new(Direction::Minimize);
+    let x_param = FloatParam::new(-10.0, 10.0);
+
+    let duration = Duration::from_millis(200);
+    let start = Instant::now();
+
+    study
+        .optimize_until(duration, |trial| {
+            let x = x_param.suggest(trial)?;
+            Ok::<_, Error>(x * x)
+        })
+        .unwrap();
+
+    let elapsed = start.elapsed();
+    assert!(
+        elapsed >= duration,
+        "should run for at least the specified duration, elapsed: {elapsed:?}"
+    );
+    // Allow generous upper bound — the last trial may overshoot
+    assert!(
+        elapsed < duration + Duration::from_millis(200),
+        "should not overshoot excessively, elapsed: {elapsed:?}"
+    );
+}
+
+#[test]
+fn test_optimize_until_completes_at_least_one_trial() {
+    use std::time::Duration;
+
+    let study: Study<f64> = Study::new(Direction::Minimize);
+    let x_param = FloatParam::new(-10.0, 10.0);
+
+    study
+        .optimize_until(Duration::from_millis(100), |trial| {
+            let x = x_param.suggest(trial)?;
+            Ok::<_, Error>(x * x)
+        })
+        .unwrap();
+
+    assert!(
+        study.n_trials() >= 1,
+        "should complete at least one trial, got {}",
+        study.n_trials()
+    );
+}
+
+#[test]
+fn test_optimize_until_works_with_minimize() {
+    use std::time::Duration;
+
+    let sampler = RandomSampler::with_seed(42);
+    let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
+    let x_param = FloatParam::new(-10.0, 10.0);
+
+    study
+        .optimize_until(Duration::from_millis(100), |trial| {
+            let x = x_param.suggest(trial)?;
+            Ok::<_, Error>(x * x)
+        })
+        .unwrap();
+
+    let best = study.best_value().unwrap();
+    assert!(best >= 0.0, "x^2 should be non-negative");
+}
+
+#[test]
+fn test_optimize_until_works_with_maximize() {
+    use std::time::Duration;
+
+    let sampler = RandomSampler::with_seed(42);
+    let study: Study<f64> = Study::with_sampler(Direction::Maximize, sampler);
+    let x_param = FloatParam::new(0.0, 10.0);
+
+    study
+        .optimize_until(Duration::from_millis(100), |trial| {
+            let x = x_param.suggest(trial)?;
+            Ok::<_, Error>(x)
+        })
+        .unwrap();
+
+    let best = study.best_value().unwrap();
+    assert!(best >= 0.0);
+}
+
+#[test]
+fn test_optimize_until_with_callback_early_stopping() {
+    use std::ops::ControlFlow;
+    use std::time::Duration;
+
+    let study: Study<f64> = Study::new(Direction::Minimize);
+    let x_param = FloatParam::new(0.0, 10.0);
+
+    study
+        .optimize_until_with_callback(
+            Duration::from_secs(10), // long timeout — callback should stop early
+            |trial| {
+                let x = x_param.suggest(trial)?;
+                Ok::<_, Error>(x)
+            },
+            |study, _trial| {
+                if study.n_trials() >= 5 {
+                    ControlFlow::Break(())
+                } else {
+                    ControlFlow::Continue(())
+                }
+            },
+        )
+        .unwrap();
+
+    assert_eq!(
+        study.n_trials(),
+        5,
+        "callback should have stopped after 5 trials"
+    );
+}
+
+#[test]
+fn test_optimize_until_all_trials_fail() {
+    use std::time::Duration;
+
+    let study: Study<f64> = Study::new(Direction::Minimize);
+
+    let result = study.optimize_until(Duration::from_millis(50), |_trial| {
+        Err::<f64, &str>("always fails")
+    });
+
+    assert!(
+        matches!(result, Err(Error::NoCompletedTrials)),
+        "should return NoCompletedTrials when all trials fail"
+    );
+}
+
+#[test]
+fn test_optimize_until_with_non_f64_value_type() {
+    use std::time::Duration;
+
+    let study: Study<i32> = Study::new(Direction::Minimize);
+    let x_param = IntParam::new(-10, 10);
+
+    study
+        .optimize_until(Duration::from_millis(100), |trial| {
+            let x = x_param.suggest(trial)?;
+            Ok::<_, Error>(x.abs() as i32)
+        })
+        .unwrap();
+
+    assert!(study.n_trials() >= 1);
+    let best = study.best_trial().unwrap();
+    assert!(best.value >= 0);
+}
