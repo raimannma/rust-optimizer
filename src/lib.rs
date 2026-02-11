@@ -273,8 +273,6 @@ pub use sampler::sobol::SobolSampler;
 pub use sampler::tpe::TpeSampler;
 #[cfg(feature = "journal")]
 pub use storage::JournalStorage;
-#[cfg(feature = "sqlite")]
-pub use storage::SqliteStorage;
 pub use storage::{MemoryStorage, Storage};
 #[cfg(feature = "serde")]
 pub use study::StudySnapshot;
@@ -323,8 +321,6 @@ pub mod prelude {
     pub use crate::sampler::tpe::TpeSampler;
     #[cfg(feature = "journal")]
     pub use crate::storage::JournalStorage;
-    #[cfg(feature = "sqlite")]
-    pub use crate::storage::SqliteStorage;
     pub use crate::storage::{MemoryStorage, Storage};
     #[cfg(feature = "serde")]
     pub use crate::study::StudySnapshot;

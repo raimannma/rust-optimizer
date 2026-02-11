@@ -8,16 +8,12 @@
 
 #[cfg(feature = "journal")]
 mod journal;
-#[cfg(feature = "sqlite")]
-mod sqlite;
 
 use std::sync::Arc;
 
 #[cfg(feature = "journal")]
 pub use journal::JournalStorage;
 use parking_lot::RwLock;
-#[cfg(feature = "sqlite")]
-pub use sqlite::SqliteStorage;
 
 mod memory;
 pub use memory::MemoryStorage;
