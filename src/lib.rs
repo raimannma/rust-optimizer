@@ -201,7 +201,7 @@ pub use param::ParamValue;
 pub use parameter::{
     BoolParam, Categorical, CategoricalParam, EnumParam, FloatParam, IntParam, ParamId, Parameter,
 };
-pub use pruner::{NopPruner, Pruner, ThresholdPruner};
+pub use pruner::{MedianPruner, NopPruner, Pruner, ThresholdPruner};
 pub use sampler::CompletedTrial;
 pub use sampler::grid::GridSearchSampler;
 pub use sampler::random::RandomSampler;
@@ -224,7 +224,7 @@ pub mod prelude {
     pub use crate::parameter::{
         BoolParam, Categorical, CategoricalParam, EnumParam, FloatParam, IntParam, Parameter,
     };
-    pub use crate::pruner::{NopPruner, Pruner, ThresholdPruner};
+    pub use crate::pruner::{MedianPruner, NopPruner, Pruner, ThresholdPruner};
     pub use crate::sampler::CompletedTrial;
     pub use crate::sampler::grid::GridSearchSampler;
     pub use crate::sampler::random::RandomSampler;

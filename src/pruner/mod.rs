@@ -4,9 +4,11 @@
 //! intermediate values compared to other trials. This is useful for
 //! discarding unpromising trials before they complete, saving compute.
 
+mod median;
 mod nop;
 mod threshold;
 
+pub use median::MedianPruner;
 pub use nop::NopPruner;
 pub use threshold::ThresholdPruner;
 
