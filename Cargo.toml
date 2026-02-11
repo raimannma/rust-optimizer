@@ -40,6 +40,15 @@ cma-es = ["dep:nalgebra"]
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
 optimizer-derive = { version = "0.1.0", path = "optimizer-derive" }
 serde_json = "1"
+criterion = { version = "0.8", features = ["html_reports"] }
+
+[[bench]]
+name = "samplers"
+harness = false
+
+[[bench]]
+name = "optimization"
+harness = false
 
 [[example]]
 name = "async_api_optimization"
