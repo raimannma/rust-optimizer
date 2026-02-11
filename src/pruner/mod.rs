@@ -6,11 +6,13 @@
 
 mod median;
 mod nop;
+mod patient;
 pub(crate) mod percentile;
 mod threshold;
 
 pub use median::MedianPruner;
 pub use nop::NopPruner;
+pub use patient::PatientPruner;
 pub use percentile::PercentilePruner;
 pub use threshold::ThresholdPruner;
 
