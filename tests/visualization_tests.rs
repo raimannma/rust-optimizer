@@ -1,5 +1,3 @@
-#![cfg(feature = "visualization")]
-
 use optimizer::parameter::{FloatParam, IntParam, Parameter};
 use optimizer::sampler::random::RandomSampler;
 use optimizer::{Direction, Study, generate_html_report};

@@ -2081,7 +2081,6 @@ where
     /// # Errors
     ///
     /// Returns [`crate::Error::NoCompletedTrials`] if fewer than 2 trials have completed.
-    #[cfg(feature = "fanova")]
     pub fn fanova(&self) -> crate::Result<crate::fanova::FanovaResult> {
         self.fanova_with_config(&crate::fanova::FanovaConfig::default())
     }
@@ -2094,7 +2093,6 @@ where
     /// # Errors
     ///
     /// Returns [`crate::Error::NoCompletedTrials`] if fewer than 2 trials have completed.
-    #[cfg(feature = "fanova")]
     #[allow(clippy::cast_precision_loss)]
     pub fn fanova_with_config(
         &self,
@@ -2357,7 +2355,6 @@ where
     }
 }
 
-#[cfg(feature = "visualization")]
 impl Study<f64> {
     /// Generates an HTML report with interactive Plotly.js charts.
     ///

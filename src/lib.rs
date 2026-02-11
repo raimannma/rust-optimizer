@@ -222,7 +222,6 @@ macro_rules! trace_debug {
 
 mod distribution;
 mod error;
-#[cfg(feature = "fanova")]
 mod fanova;
 mod importance;
 mod kde;
@@ -237,11 +236,9 @@ pub mod storage;
 mod study;
 mod trial;
 mod types;
-#[cfg(feature = "visualization")]
 mod visualization;
 
 pub use error::{Error, Result, TrialPruned};
-#[cfg(feature = "fanova")]
 pub use fanova::{FanovaConfig, FanovaResult};
 pub use multi_objective::{MultiObjectiveSampler, MultiObjectiveStudy, MultiObjectiveTrial};
 #[cfg(feature = "derive")]
@@ -278,7 +275,6 @@ pub use study::Study;
 pub use study::StudySnapshot;
 pub use trial::{AttrValue, Trial};
 pub use types::{Direction, TrialState};
-#[cfg(feature = "visualization")]
 pub use visualization::generate_html_report;
 
 /// Convenient wildcard import for the most common types.
@@ -291,7 +287,6 @@ pub mod prelude {
     pub use optimizer_derive::Categorical as DeriveCategory;
 
     pub use crate::error::{Error, Result, TrialPruned};
-    #[cfg(feature = "fanova")]
     pub use crate::fanova::{FanovaConfig, FanovaResult};
     pub use crate::multi_objective::{MultiObjectiveStudy, MultiObjectiveTrial};
     pub use crate::param::ParamValue;
@@ -326,6 +321,5 @@ pub mod prelude {
     pub use crate::study::StudySnapshot;
     pub use crate::trial::{AttrValue, Trial};
     pub use crate::types::Direction;
-    #[cfg(feature = "visualization")]
     pub use crate::visualization::generate_html_report;
 }

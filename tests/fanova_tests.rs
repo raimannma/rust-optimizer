@@ -1,7 +1,5 @@
 //! Integration tests for fANOVA parameter importance.
 
-#![cfg(feature = "fanova")]
-
 use optimizer::prelude::*;
 
 #[test]

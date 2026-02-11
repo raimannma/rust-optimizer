@@ -38,8 +38,6 @@ tracing = ["dep:tracing"]
 sobol = ["dep:sobol_burley"]
 cma-es = ["dep:nalgebra"]
 gp = ["dep:nalgebra"]
-visualization = []
-fanova = []
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
@@ -72,7 +70,6 @@ required-features = ["derive"]
 [[example]]
 name = "visualization_demo"
 path = "examples/visualization_demo.rs"
-required-features = ["visualization"]
 
 [[test]]
 name = "journal_tests"
