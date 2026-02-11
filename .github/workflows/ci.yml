@@ -98,8 +98,12 @@ jobs:
           RUSTDOCFLAGS: -D warnings
 
   feature-check:
-    name: Feature Combinations
+    name: Feature Combinations (${{ matrix.partition }}/4)
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        partition: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@v6
       - name: Install Rust
@@ -110,7 +114,7 @@ jobs:
         uses: taiki-e/install-action@cargo-hack
       - uses: Swatinem/rust-cache@v2
       - name: Check feature powerset
-        run: cargo hack check --feature-powerset --no-dev-deps
+        run: cargo hack check --feature-powerset --no-dev-deps --partition ${{ matrix.partition }}/4
 
   coverage:
     name: Coverage
