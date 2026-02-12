@@ -1,7 +1,5 @@
 use optimizer::prelude::*;
-use optimizer::sampler::differential_evolution::{
-    DifferentialEvolutionSampler, DifferentialEvolutionStrategy,
-};
+use optimizer::sampler::de::{DifferentialEvolutionSampler, DifferentialEvolutionStrategy};
 
 #[test]
 fn sphere_function() {

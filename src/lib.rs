@@ -42,7 +42,7 @@
 //! |------|------|
 //! | [`Study`] | Drive an optimization loop: create trials, record results, track the best. |
 //! | [`Trial`] | A single evaluation of the objective function, carrying suggested parameter values. |
-//! | [`Parameter`] | Define the search space — [`FloatParam`], [`IntParam`], [`CategoricalParam`], [`BoolParam`], [`EnumParam`]. |
+//! | [`Parameter`](parameter::Parameter) | Define the search space — [`FloatParam`](parameter::FloatParam), [`IntParam`](parameter::IntParam), [`CategoricalParam`](parameter::CategoricalParam), [`BoolParam`](parameter::BoolParam), [`EnumParam`](parameter::EnumParam). |
 //! | [`Sampler`](sampler::Sampler) | Strategy for choosing the next point to evaluate (TPE, CMA-ES, random, etc.). |
 //! | [`Direction`] | Whether the study minimizes or maximizes the objective value. |
 //!
@@ -52,23 +52,23 @@
 //!
 //! | Sampler | Algorithm | Best for | Feature flag |
 //! |---------|-----------|----------|--------------|
-//! | [`RandomSampler`] | Uniform random | Baselines, high-dimensional | — |
-//! | [`TpeSampler`] | Tree-Parzen Estimator | General-purpose Bayesian | — |
-//! | [`GridSearchSampler`] | Exhaustive grid | Small, discrete spaces | — |
-//! | [`SobolSampler`] | Sobol quasi-random sequence | Space-filling, low dimensions | `sobol` |
-//! | [`CmaEsSampler`] | CMA-ES | Continuous, moderate dimensions | `cma-es` |
-//! | [`GpSampler`] | Gaussian Process + EI | Expensive objectives, few trials | `gp` |
-//! | [`DifferentialEvolutionSampler`] | Differential Evolution | Non-convex, population-based | — |
-//! | [`BohbSampler`] | BOHB (TPE + `HyperBand`) | Budget-aware early stopping | — |
+//! | [`RandomSampler`](sampler::RandomSampler) | Uniform random | Baselines, high-dimensional | — |
+//! | [`TpeSampler`](sampler::TpeSampler) | Tree-Parzen Estimator | General-purpose Bayesian | — |
+//! | [`GridSearchSampler`](sampler::GridSearchSampler) | Exhaustive grid | Small, discrete spaces | — |
+//! | [`SobolSampler`](sampler::SobolSampler) | Sobol quasi-random sequence | Space-filling, low dimensions | `sobol` |
+//! | [`CmaEsSampler`](sampler::CmaEsSampler) | CMA-ES | Continuous, moderate dimensions | `cma-es` |
+//! | [`GpSampler`](sampler::GpSampler) | Gaussian Process + EI | Expensive objectives, few trials | `gp` |
+//! | [`DifferentialEvolutionSampler`](sampler::DifferentialEvolutionSampler) | Differential Evolution | Non-convex, population-based | — |
+//! | [`BohbSampler`](sampler::BohbSampler) | BOHB (TPE + `HyperBand`) | Budget-aware early stopping | — |
 //!
 //! ## Multi-objective samplers
 //!
 //! | Sampler | Algorithm | Best for | Feature flag |
 //! |---------|-----------|----------|--------------|
-//! | [`Nsga2Sampler`] | NSGA-II | 2-3 objectives | — |
-//! | [`Nsga3Sampler`] | NSGA-III (reference-point) | 3+ objectives | — |
-//! | [`MoeadSampler`] | MOEA/D (decomposition) | Many objectives, structured fronts | — |
-//! | [`MotpeSampler`] | Multi-Objective TPE | Bayesian multi-objective | — |
+//! | [`Nsga2Sampler`](sampler::Nsga2Sampler) | NSGA-II | 2-3 objectives | — |
+//! | [`Nsga3Sampler`](sampler::Nsga3Sampler) | NSGA-III (reference-point) | 3+ objectives | — |
+//! | [`MoeadSampler`](sampler::MoeadSampler) | MOEA/D (decomposition) | Many objectives, structured fronts | — |
+//! | [`MotpeSampler`](sampler::MotpeSampler) | Multi-Objective TPE | Bayesian multi-objective | — |
 //!
 //! # Feature Flags
 //!
@@ -77,10 +77,10 @@
 //! | `async` | Async/parallel optimization via tokio ([`Study::optimize_async`], [`Study::optimize_parallel`]) | off |
 //! | `derive` | `#[derive(Categorical)]` for enum parameters | off |
 //! | `serde` | `Serialize`/`Deserialize` on public types, [`Study::save`]/[`Study::load`] | off |
-//! | `journal` | [`JournalStorage`] — JSONL persistence with file locking (enables `serde`) | off |
-//! | `sobol` | [`SobolSampler`] — quasi-random low-discrepancy sequences | off |
-//! | `cma-es` | [`CmaEsSampler`] — Covariance Matrix Adaptation Evolution Strategy | off |
-//! | `gp` | [`GpSampler`] — Gaussian Process surrogate with Expected Improvement | off |
+//! | `journal` | [`JournalStorage`](storage::JournalStorage) — JSONL persistence with file locking (enables `serde`) | off |
+//! | `sobol` | [`SobolSampler`](sampler::SobolSampler) — quasi-random low-discrepancy sequences | off |
+//! | `cma-es` | [`CmaEsSampler`](sampler::CmaEsSampler) — Covariance Matrix Adaptation Evolution Strategy | off |
+//! | `gp` | [`GpSampler`](sampler::GpSampler) — Gaussian Process surrogate with Expected Improvement | off |
 //! | `tracing` | Structured log events via [`tracing`](https://docs.rs/tracing) at key optimization points | off |
 
 /// Emit a `tracing::info!` event when the `tracing` feature is enabled.
@@ -127,38 +127,8 @@ mod visualization;
 
 pub use error::{Error, Result, TrialPruned};
 pub use fanova::{FanovaConfig, FanovaResult};
-pub use multi_objective::{MultiObjectiveSampler, MultiObjectiveStudy, MultiObjectiveTrial};
 #[cfg(feature = "derive")]
 pub use optimizer_derive::Categorical;
-pub use param::ParamValue;
-pub use parameter::{
-    BoolParam, Categorical, CategoricalParam, EnumParam, FloatParam, IntParam, ParamId, Parameter,
-};
-pub use pruner::{
-    HyperbandPruner, MedianPruner, NopPruner, PatientPruner, PercentilePruner, Pruner,
-    SuccessiveHalvingPruner, ThresholdPruner, WilcoxonPruner,
-};
-pub use sampler::CompletedTrial;
-pub use sampler::bohb::BohbSampler;
-#[cfg(feature = "cma-es")]
-pub use sampler::cma_es::CmaEsSampler;
-pub use sampler::differential_evolution::{
-    DifferentialEvolutionSampler, DifferentialEvolutionStrategy,
-};
-#[cfg(feature = "gp")]
-pub use sampler::gp::GpSampler;
-pub use sampler::grid::GridSearchSampler;
-pub use sampler::moead::{Decomposition, MoeadSampler};
-pub use sampler::motpe::MotpeSampler;
-pub use sampler::nsga2::Nsga2Sampler;
-pub use sampler::nsga3::Nsga3Sampler;
-pub use sampler::random::RandomSampler;
-#[cfg(feature = "sobol")]
-pub use sampler::sobol::SobolSampler;
-pub use sampler::tpe::TpeSampler;
-#[cfg(feature = "journal")]
-pub use storage::JournalStorage;
-pub use storage::{MemoryStorage, Storage};
 #[cfg(feature = "serde")]
 pub use study::StudySnapshot;
 pub use study::{Study, StudyBuilder};
@@ -177,33 +147,28 @@ pub mod prelude {
 
     pub use crate::error::{Error, Result, TrialPruned};
     pub use crate::fanova::{FanovaConfig, FanovaResult};
-    pub use crate::multi_objective::{MultiObjectiveStudy, MultiObjectiveTrial};
-    pub use crate::param::ParamValue;
+    pub use crate::multi_objective::{
+        MultiObjectiveSampler, MultiObjectiveStudy, MultiObjectiveTrial,
+    };
     pub use crate::parameter::{
-        BoolParam, Categorical, CategoricalParam, EnumParam, FloatParam, IntParam, Parameter,
+        BoolParam, Categorical, CategoricalParam, EnumParam, FloatParam, IntParam, ParamValue,
+        Parameter,
     };
     pub use crate::pruner::{
         HyperbandPruner, MedianPruner, NopPruner, PatientPruner, PercentilePruner, Pruner,
-        SuccessiveHalvingPruner, ThresholdPruner,
+        SuccessiveHalvingPruner, ThresholdPruner, WilcoxonPruner,
     };
-    pub use crate::sampler::CompletedTrial;
-    pub use crate::sampler::bohb::BohbSampler;
     #[cfg(feature = "cma-es")]
-    pub use crate::sampler::cma_es::CmaEsSampler;
-    pub use crate::sampler::differential_evolution::{
-        DifferentialEvolutionSampler, DifferentialEvolutionStrategy,
-    };
+    pub use crate::sampler::CmaEsSampler;
     #[cfg(feature = "gp")]
-    pub use crate::sampler::gp::GpSampler;
-    pub use crate::sampler::grid::GridSearchSampler;
-    pub use crate::sampler::moead::{Decomposition, MoeadSampler};
-    pub use crate::sampler::motpe::MotpeSampler;
-    pub use crate::sampler::nsga2::Nsga2Sampler;
-    pub use crate::sampler::nsga3::Nsga3Sampler;
-    pub use crate::sampler::random::RandomSampler;
+    pub use crate::sampler::GpSampler;
     #[cfg(feature = "sobol")]
-    pub use crate::sampler::sobol::SobolSampler;
-    pub use crate::sampler::tpe::TpeSampler;
+    pub use crate::sampler::SobolSampler;
+    pub use crate::sampler::{
+        BohbSampler, CompletedTrial, Decomposition, DifferentialEvolutionSampler,
+        DifferentialEvolutionStrategy, GridSearchSampler, MoeadSampler, MotpeSampler, Nsga2Sampler,
+        Nsga3Sampler, RandomSampler, TpeSampler,
+    };
     #[cfg(feature = "journal")]
     pub use crate::storage::JournalStorage;
     pub use crate::storage::{MemoryStorage, Storage};

@@ -382,8 +382,8 @@ where
     /// ```
     /// use std::collections::HashMap;
     ///
-    /// use optimizer::parameter::{FloatParam, IntParam, Parameter};
-    /// use optimizer::{Direction, ParamValue, Study};
+    /// use optimizer::parameter::{FloatParam, IntParam, ParamValue, Parameter};
+    /// use optimizer::{Direction, Study};
     ///
     /// let study: Study<f64> = Study::new(Direction::Minimize);
     /// let x = FloatParam::new(0.0, 10.0);

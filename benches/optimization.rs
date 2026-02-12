@@ -2,10 +2,10 @@
 mod test_functions;
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-use optimizer::parameter::Parameter;
+use optimizer::Study;
+use optimizer::parameter::{FloatParam, Parameter};
 use optimizer::sampler::random::RandomSampler;
 use optimizer::sampler::tpe::TpeSampler;
-use optimizer::{FloatParam, Study};
 
 fn make_params(dims: usize) -> Vec<FloatParam> {
     (0..dims)

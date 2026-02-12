@@ -3,7 +3,7 @@
 pub mod bohb;
 #[cfg(feature = "cma-es")]
 pub mod cma_es;
-pub mod differential_evolution;
+pub mod de;
 pub(crate) mod genetic;
 #[cfg(feature = "gp")]
 pub mod gp;
@@ -18,6 +18,22 @@ pub mod sobol;
 pub mod tpe;
 
 use std::collections::HashMap;
+
+pub use bohb::BohbSampler;
+#[cfg(feature = "cma-es")]
+pub use cma_es::CmaEsSampler;
+pub use de::{DifferentialEvolutionSampler, DifferentialEvolutionStrategy};
+#[cfg(feature = "gp")]
+pub use gp::GpSampler;
+pub use grid::GridSearchSampler;
+pub use moead::{Decomposition, MoeadSampler};
+pub use motpe::MotpeSampler;
+pub use nsga2::Nsga2Sampler;
+pub use nsga3::Nsga3Sampler;
+pub use random::RandomSampler;
+#[cfg(feature = "sobol")]
+pub use sobol::SobolSampler;
+pub use tpe::TpeSampler;
 
 use crate::distribution::Distribution;
 use crate::param::ParamValue;

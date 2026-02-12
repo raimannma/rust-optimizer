@@ -4,13 +4,13 @@ use syn::{Data, DeriveInput, Fields, parse_macro_input};
 
 /// Derive macro for the `Categorical` trait on fieldless enums.
 ///
-/// Generates an implementation of `optimizer::Categorical` that maps
+/// Generates an implementation of `optimizer::parameter::Categorical` that maps
 /// enum variants to/from sequential indices.
 ///
 /// # Example
 ///
 /// ```ignore
-/// use optimizer::Categorical;
+/// use optimizer::parameter::Categorical;
 ///
 /// #[derive(Clone, Categorical)]
 /// enum Color {
@@ -49,7 +49,7 @@ pub fn derive_categorical(input: TokenStream) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 
     let expanded = quote! {
-        impl #impl_generics optimizer::Categorical for #name #ty_generics #where_clause {
+        impl #impl_generics optimizer::parameter::Categorical for #name #ty_generics #where_clause {
             const N_CHOICES: usize = #n_choices;
 
             fn from_index(index: usize) -> Self {

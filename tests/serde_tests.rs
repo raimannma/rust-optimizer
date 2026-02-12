@@ -2,9 +2,9 @@
 
 use std::collections::HashMap;
 
-use optimizer::parameter::{FloatParam, IntParam, Parameter};
+use optimizer::parameter::{FloatParam, IntParam, ParamValue, Parameter};
 use optimizer::sampler::CompletedTrial;
-use optimizer::{Direction, ParamValue, Study, StudySnapshot, TrialState};
+use optimizer::{Direction, Study, StudySnapshot, TrialState};
 
 #[test]
 fn round_trip_save_load() {

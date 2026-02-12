@@ -46,7 +46,7 @@ use crate::distribution::{
     CategoricalDistribution, Distribution, FloatDistribution, IntDistribution,
 };
 use crate::error::{Error, Result};
-use crate::param::ParamValue;
+pub use crate::param::ParamValue;
 use crate::trial::Trial;
 
 static NEXT_PARAM_ID: AtomicU64 = AtomicU64::new(0);

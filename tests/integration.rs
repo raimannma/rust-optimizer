@@ -1707,7 +1707,7 @@ fn test_ask_and_tell_with_custom_value_type() {
 
 use std::collections::HashMap;
 
-use optimizer::ParamValue;
+use optimizer::parameter::ParamValue;
 
 #[test]
 fn test_enqueue_params_evaluated_first() {
@@ -2291,7 +2291,7 @@ fn test_builder_with_sampler() {
 
 #[test]
 fn test_builder_with_pruner() {
-    use optimizer::NopPruner;
+    use optimizer::pruner::NopPruner;
 
     let study: Study<f64> = Study::builder().pruner(NopPruner).build();
 
@@ -2303,7 +2303,7 @@ fn test_builder_chaining() {
     let study: Study<f64> = Study::builder()
         .maximize()
         .sampler(RandomSampler::with_seed(42))
-        .pruner(optimizer::NopPruner)
+        .pruner(optimizer::pruner::NopPruner)
         .build();
 
     assert_eq!(study.direction(), Direction::Maximize);

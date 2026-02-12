@@ -29,8 +29,8 @@
 //!
 //! Internally, this module also provides the fast non-dominated sorting
 //! algorithm (Deb et al., 2002) used by
-//! [`MultiObjectiveStudy::pareto_front()`](crate::MultiObjectiveStudy::pareto_front)
-//! and [`Nsga2Sampler`](crate::Nsga2Sampler).
+//! [`MultiObjectiveStudy::pareto_front()`](crate::multi_objective::MultiObjectiveStudy::pareto_front)
+//! and [`Nsga2Sampler`](crate::sampler::Nsga2Sampler).
 //!
 //! # Example
 //!

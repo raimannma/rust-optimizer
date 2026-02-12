@@ -19,9 +19,9 @@
 //! # Samplers
 //!
 //! By default a random sampler is used. For smarter search, pass a
-//! [`MultiObjectiveSampler`] such as [`Nsga2Sampler`](crate::Nsga2Sampler),
-//! [`Nsga3Sampler`](crate::Nsga3Sampler), or
-//! [`MoeadSampler`](crate::MoeadSampler) via
+//! [`MultiObjectiveSampler`] such as [`Nsga2Sampler`](crate::sampler::Nsga2Sampler),
+//! [`Nsga3Sampler`](crate::sampler::Nsga3Sampler), or
+//! [`MoeadSampler`](crate::sampler::MoeadSampler) via
 //! [`MultiObjectiveStudy::with_sampler`].
 //!
 //! # Examples
@@ -140,9 +140,9 @@ impl MultiObjectiveTrial {
 /// (`&[MultiObjectiveTrial]`) and the per-objective directions
 /// (`&[Direction]`).
 ///
-/// Implementations include [`Nsga2Sampler`](crate::Nsga2Sampler),
-/// [`Nsga3Sampler`](crate::Nsga3Sampler), and
-/// [`MoeadSampler`](crate::MoeadSampler).
+/// Implementations include [`Nsga2Sampler`](crate::sampler::Nsga2Sampler),
+/// [`Nsga3Sampler`](crate::sampler::Nsga3Sampler), and
+/// [`MoeadSampler`](crate::sampler::MoeadSampler).
 pub trait MultiObjectiveSampler: Send + Sync {
     /// Samples a parameter value from the given distribution.
     fn sample(

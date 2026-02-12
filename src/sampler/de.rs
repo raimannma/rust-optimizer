@@ -46,9 +46,7 @@
 //! # Examples
 //!
 //! ```
-//! use optimizer::sampler::differential_evolution::{
-//!     DifferentialEvolutionSampler, DifferentialEvolutionStrategy,
-//! };
+//! use optimizer::sampler::de::{DifferentialEvolutionSampler, DifferentialEvolutionStrategy};
 //! use optimizer::{Direction, Study};
 //!
 //! // Minimize with DE using the Best1 strategy for faster convergence
@@ -101,7 +99,7 @@ pub enum DifferentialEvolutionStrategy {
 /// # Examples
 ///
 /// ```
-/// use optimizer::sampler::differential_evolution::DifferentialEvolutionSampler;
+/// use optimizer::sampler::de::DifferentialEvolutionSampler;
 /// use optimizer::{Direction, Study};
 ///
 /// // Default configuration
@@ -115,7 +113,7 @@ pub enum DifferentialEvolutionStrategy {
 /// );
 ///
 /// // Custom configuration via builder
-/// use optimizer::sampler::differential_evolution::DifferentialEvolutionStrategy;
+/// use optimizer::sampler::de::DifferentialEvolutionStrategy;
 /// let sampler = DifferentialEvolutionSampler::builder()
 ///     .mutation_factor(0.8)
 ///     .crossover_rate(0.9)
@@ -183,7 +181,7 @@ impl Default for DifferentialEvolutionSampler {
 /// # Examples
 ///
 /// ```
-/// use optimizer::sampler::differential_evolution::{
+/// use optimizer::sampler::de::{
 ///     DifferentialEvolutionSamplerBuilder, DifferentialEvolutionStrategy,
 /// };
 ///

@@ -317,7 +317,7 @@ mod tests {
 
         CompletedTrial::with_intermediate_values(
             id,
-            HashMap::<ParamId, crate::ParamValue>::new(),
+            HashMap::<ParamId, crate::parameter::ParamValue>::new(),
             HashMap::new(),
             HashMap::new(),
             0.0,

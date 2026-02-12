@@ -1,12 +1,11 @@
 use std::collections::HashMap;
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-use optimizer::parameter::Parameter;
-use optimizer::sampler::Sampler;
+use optimizer::parameter::{FloatParam, Parameter};
 use optimizer::sampler::grid::GridSearchSampler;
 use optimizer::sampler::random::RandomSampler;
 use optimizer::sampler::tpe::TpeSampler;
-use optimizer::{CompletedTrial, FloatParam};
+use optimizer::sampler::{CompletedTrial, Sampler};
 
 /// Build a synthetic history of `n` completed trials over `dims` float parameters.
 fn build_history(n: usize, dims: usize) -> Vec<CompletedTrial<f64>> {
@@ -33,7 +32,7 @@ fn build_history(n: usize, dims: usize) -> Vec<CompletedTrial<f64>> {
         let value: f64 = param_values
             .values()
             .map(|v| {
-                let optimizer::ParamValue::Float(f) = v else {
+                let optimizer::parameter::ParamValue::Float(f) = v else {
                     unreachable!()
                 };
                 f * f

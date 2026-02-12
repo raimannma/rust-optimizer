@@ -1,11 +1,12 @@
 //! Integration tests for multi-objective optimization.
 
+use optimizer::Direction;
 use optimizer::multi_objective::MultiObjectiveStudy;
 use optimizer::parameter::{CategoricalParam, FloatParam, Parameter};
+use optimizer::sampler::Decomposition;
 use optimizer::sampler::moead::MoeadSampler;
 use optimizer::sampler::nsga2::Nsga2Sampler;
 use optimizer::sampler::nsga3::Nsga3Sampler;
-use optimizer::{Decomposition, Direction};
 
 // ---------------------------------------------------------------------------
 // Pareto utility tests (via public MultiObjectiveStudy)
