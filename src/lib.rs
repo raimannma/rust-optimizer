@@ -55,9 +55,9 @@
 //! | [`RandomSampler`](sampler::RandomSampler) | Uniform random | Baselines, high-dimensional | — |
 //! | [`TpeSampler`](sampler::TpeSampler) | Tree-Parzen Estimator | General-purpose Bayesian | — |
 //! | [`GridSearchSampler`](sampler::GridSampler) | Exhaustive grid | Small, discrete spaces | — |
-//! | [`SobolSampler`](sampler::SobolSampler) | Sobol quasi-random sequence | Space-filling, low dimensions | `sobol` |
-//! | [`CmaEsSampler`](sampler::CmaEsSampler) | CMA-ES | Continuous, moderate dimensions | `cma-es` |
-//! | [`GpSampler`](sampler::GpSampler) | Gaussian Process + EI | Expensive objectives, few trials | `gp` |
+//! | `SobolSampler` | Sobol quasi-random sequence | Space-filling, low dimensions | `sobol` |
+//! | `CmaEsSampler` | CMA-ES | Continuous, moderate dimensions | `cma-es` |
+//! | `GpSampler` | Gaussian Process + EI | Expensive objectives, few trials | `gp` |
 //! | [`DESampler`](sampler::DESampler) | Differential Evolution | Non-convex, population-based | — |
 //! | [`BohbSampler`](sampler::BohbSampler) | BOHB (TPE + `HyperBand`) | Budget-aware early stopping | — |
 //!
@@ -74,13 +74,13 @@
 //!
 //! | Flag | What it enables | Default |
 //! |------|----------------|---------|
-//! | `async` | Async/parallel optimization via tokio ([`Study::optimize_async`], [`Study::optimize_parallel`]) | off |
+//! | `async` | Async/parallel optimization via tokio (`Study::optimize_async`, `Study::optimize_parallel`) | off |
 //! | `derive` | `#[derive(Categorical)]` for enum parameters | off |
-//! | `serde` | `Serialize`/`Deserialize` on public types, [`Study::save`]/[`Study::load`] | off |
-//! | `journal` | [`JournalStorage`](storage::JournalStorage) — JSONL persistence with file locking (enables `serde`) | off |
-//! | `sobol` | [`SobolSampler`](sampler::SobolSampler) — quasi-random low-discrepancy sequences | off |
-//! | `cma-es` | [`CmaEsSampler`](sampler::CmaEsSampler) — Covariance Matrix Adaptation Evolution Strategy | off |
-//! | `gp` | [`GpSampler`](sampler::GpSampler) — Gaussian Process surrogate with Expected Improvement | off |
+//! | `serde` | `Serialize`/`Deserialize` on public types, `Study::save`/`Study::load` | off |
+//! | `journal` | `JournalStorage` — JSONL persistence with file locking (enables `serde`) | off |
+//! | `sobol` | `SobolSampler` — quasi-random low-discrepancy sequences | off |
+//! | `cma-es` | `CmaEsSampler` — Covariance Matrix Adaptation Evolution Strategy | off |
+//! | `gp` | `GpSampler` — Gaussian Process surrogate with Expected Improvement | off |
 //! | `tracing` | Structured log events via [`tracing`](https://docs.rs/tracing) at key optimization points | off |
 
 /// Emit a `tracing::info!` event when the `tracing` feature is enabled.

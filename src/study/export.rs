@@ -224,7 +224,7 @@ where
 impl<V: PartialOrd + Clone + serde::Serialize> Study<V> {
     /// Export trials as a pretty-printed JSON array to a file.
     ///
-    /// Each element in the array is a serialized [`CompletedTrial`].
+    /// Each element in the array is a serialized [`crate::CompletedTrial`].
     /// Requires the `serde` feature.
     ///
     /// # Errors

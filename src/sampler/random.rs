@@ -15,7 +15,7 @@
 //!   surprisingly competitive.
 //!
 //! For better uniform coverage without model fitting, consider
-//! [`SobolSampler`](super::sobol::SobolSampler) (requires the `sobol`
+//! `SobolSampler` (requires the `sobol`
 //! feature flag).
 //!
 //! # Example

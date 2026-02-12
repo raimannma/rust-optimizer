@@ -29,9 +29,9 @@
 //! - **No feature flags required** — DE is available with default features.
 //!
 //! For non-separable problems in moderate dimensions, consider
-//! [`CmaEsSampler`](super::cma_es::CmaEsSampler) which learns parameter
+//! `CmaEsSampler` which learns parameter
 //! correlations. For expensive functions with few dimensions, consider
-//! [`GpSampler`](super::gp::GpSampler).
+//! `GpSampler`.
 //!
 //! # Configuration
 //!

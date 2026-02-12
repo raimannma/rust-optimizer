@@ -225,7 +225,7 @@ where
     ///
     /// This is the most general constructor — all other constructors
     /// delegate to this one. Use it when you need a non-default storage
-    /// backend (e.g., [`JournalStorage`](crate::storage::JournalStorage)).
+    /// backend (e.g., `JournalStorage`).
     ///
     /// # Arguments
     ///

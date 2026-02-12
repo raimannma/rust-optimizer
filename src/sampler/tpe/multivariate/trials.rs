@@ -116,7 +116,7 @@ impl MultivariateTpeSampler {
 
     /// Splits filtered trials into good and bad groups based on the gamma quantile.
     ///
-    /// The gamma value is computed dynamically using the configured [`GammaStrategy`].
+    /// The gamma value is computed dynamically using the configured [`super::GammaStrategy`].
     /// Trials are sorted by objective value (ascending for minimization), and the
     /// gamma quantile determines the split point.
     #[allow(

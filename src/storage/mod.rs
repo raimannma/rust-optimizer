@@ -9,12 +9,12 @@
 //! | Backend | Description | Feature flag |
 //! |---------|-------------|-------------|
 //! | [`MemoryStorage`] | In-memory `Vec` behind a read-write lock (the default) | — |
-//! | [`JournalStorage`] | JSONL file with `fs2` file locking for multi-process sharing | `journal` |
+//! | `JournalStorage` | JSONL file with `fs2` file locking for multi-process sharing | `journal` |
 //!
 //! # When to swap backends
 //!
 //! The default [`MemoryStorage`] is sufficient for single-process studies
-//! where persistence is not needed.  Switch to [`JournalStorage`] when you
+//! where persistence is not needed.  Switch to `JournalStorage` when you
 //! want to:
 //!
 //! - **Resume** a study after a process restart.
@@ -59,7 +59,7 @@ use crate::sampler::CompletedTrial;
 /// a plain `Vec` behind a read-write lock.
 ///
 /// Implementations must be `Send + Sync` because a study may be shared
-/// across threads (e.g. via [`optimize_parallel`](crate::Study::optimize_parallel)).
+/// across threads (e.g. via `Study::optimize_parallel`).
 pub trait Storage<V>: Send + Sync {
     /// Append a completed trial to the store.
     fn push(&self, trial: CompletedTrial<V>);
