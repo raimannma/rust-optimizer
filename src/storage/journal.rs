@@ -126,7 +126,7 @@ use crate::sampler::CompletedTrial;
 /// # Security considerations
 ///
 /// File contents are loaded into memory in full; see the
-/// [module-level docs](self) for details and mitigations.
+/// module-level docs for details and mitigations.
 pub struct JournalStorage<V = f64> {
     memory: MemoryStorage<V>,
     path: PathBuf,
