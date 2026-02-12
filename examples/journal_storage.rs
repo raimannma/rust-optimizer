@@ -24,7 +24,7 @@ fn main() -> optimizer::Result<()> {
             .storage(storage)
             .build();
 
-        study.optimize(20, |trial| {
+        study.optimize(20, |trial: &mut optimizer::Trial| {
             let xv = x.suggest(trial)?;
             Ok::<_, optimizer::Error>(xv * xv)
         })?;
@@ -46,7 +46,7 @@ fn main() -> optimizer::Result<()> {
             .build();
 
         let before = study.n_trials();
-        study.optimize(10, |trial| {
+        study.optimize(10, |trial: &mut optimizer::Trial| {
             let xv = x.suggest(trial)?;
             Ok::<_, optimizer::Error>(xv * xv)
         })?;

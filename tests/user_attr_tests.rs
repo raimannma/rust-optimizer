@@ -7,7 +7,7 @@ fn set_and_get_float_attr() {
     let x = FloatParam::new(0.0, 1.0);
 
     study
-        .optimize(1, |trial| {
+        .optimize(1, |trial: &mut optimizer::Trial| {
             let _ = x.suggest(trial)?;
             trial.set_user_attr("score", 42.5);
             assert_eq!(trial.user_attr("score"), Some(&AttrValue::Float(42.5)));
@@ -22,7 +22,7 @@ fn set_and_get_int_attr() {
     let x = FloatParam::new(0.0, 1.0);
 
     study
-        .optimize(1, |trial| {
+        .optimize(1, |trial: &mut optimizer::Trial| {
             let _ = x.suggest(trial)?;
             trial.set_user_attr("epoch", 42_i64);
             assert_eq!(trial.user_attr("epoch"), Some(&AttrValue::Int(42)));
@@ -37,7 +37,7 @@ fn set_and_get_string_attr() {
     let x = FloatParam::new(0.0, 1.0);
 
     study
-        .optimize(1, |trial| {
+        .optimize(1, |trial: &mut optimizer::Trial| {
             let _ = x.suggest(trial)?;
             trial.set_user_attr("model", "resnet50");
             assert_eq!(
@@ -55,7 +55,7 @@ fn set_and_get_bool_attr() {
     let x = FloatParam::new(0.0, 1.0);
 
     study
-        .optimize(1, |trial| {
+        .optimize(1, |trial: &mut optimizer::Trial| {
             let _ = x.suggest(trial)?;
             trial.set_user_attr("converged", true);
             assert_eq!(trial.user_attr("converged"), Some(&AttrValue::Bool(true)));
@@ -70,7 +70,7 @@ fn attrs_propagate_to_completed_trial() {
     let x = FloatParam::new(0.0, 1.0);
 
     study
-        .optimize(1, |trial| {
+        .optimize(1, |trial: &mut optimizer::Trial| {
             let _ = x.suggest(trial)?;
             trial.set_user_attr("time_secs", 1.5);
             trial.set_user_attr("tag", "baseline");
@@ -92,7 +92,7 @@ fn overwrite_attr_replaces_value() {
     let x = FloatParam::new(0.0, 1.0);
 
     study
-        .optimize(1, |trial| {
+        .optimize(1, |trial: &mut optimizer::Trial| {
             let _ = x.suggest(trial)?;
             trial.set_user_attr("key", "old");
             trial.set_user_attr("key", "new");
@@ -117,7 +117,7 @@ fn missing_attr_returns_none() {
     let x = FloatParam::new(0.0, 1.0);
 
     study
-        .optimize(1, |trial| {
+        .optimize(1, |trial: &mut optimizer::Trial| {
             let _ = x.suggest(trial)?;
             assert_eq!(trial.user_attr("nonexistent"), None);
             Ok::<_, optimizer::Error>(1.0)
@@ -134,7 +134,7 @@ fn user_attrs_map_returns_all() {
     let x = FloatParam::new(0.0, 1.0);
 
     study
-        .optimize(1, |trial| {
+        .optimize(1, |trial: &mut optimizer::Trial| {
             let _ = x.suggest(trial)?;
             trial.set_user_attr("a", 1.0);
             trial.set_user_attr("b", true);

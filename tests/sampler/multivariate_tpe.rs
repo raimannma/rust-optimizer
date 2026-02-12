@@ -55,7 +55,7 @@ fn test_multivariate_tpe_rosenbrock_finds_good_solution() {
     let y_param = FloatParam::new(-2.0, 4.0);
 
     study
-        .optimize(100, |trial| {
+        .optimize(100, |trial: &mut optimizer::Trial| {
             let x = x_param.suggest(trial)?;
             let y = y_param.suggest(trial)?;
             Ok::<_, Error>(rosenbrock(x, y))
@@ -90,7 +90,7 @@ fn test_independent_tpe_rosenbrock() {
     let y_param = FloatParam::new(-2.0, 4.0);
 
     study
-        .optimize(100, |trial| {
+        .optimize(100, |trial: &mut optimizer::Trial| {
             let x = x_param.suggest(trial)?;
             let y = y_param.suggest(trial)?;
             Ok::<_, Error>(rosenbrock(x, y))
@@ -133,7 +133,7 @@ fn test_multivariate_tpe_outperforms_on_correlated_problem() {
         let y_param = FloatParam::new(-2.0, 4.0);
 
         study
-            .optimize(n_trials, |trial| {
+            .optimize(n_trials, |trial: &mut optimizer::Trial| {
                 let x = x_param.suggest(trial)?;
                 let y = y_param.suggest(trial)?;
                 Ok::<_, Error>(rosenbrock(x, y))
@@ -156,7 +156,7 @@ fn test_multivariate_tpe_outperforms_on_correlated_problem() {
         let y_param = FloatParam::new(-2.0, 4.0);
 
         study
-            .optimize(n_trials, |trial| {
+            .optimize(n_trials, |trial: &mut optimizer::Trial| {
                 let x = x_param.suggest(trial)?;
                 let y = y_param.suggest(trial)?;
                 Ok::<_, Error>(rosenbrock(x, y))
@@ -218,7 +218,7 @@ fn test_multivariate_tpe_independent_problem() {
     let y_param = FloatParam::new(-5.0, 5.0);
 
     study
-        .optimize(50, |trial| {
+        .optimize(50, |trial: &mut optimizer::Trial| {
             let x = x_param.suggest(trial)?;
             let y = y_param.suggest(trial)?;
             Ok::<_, Error>(sphere(x, y))
@@ -250,7 +250,7 @@ fn test_independent_tpe_independent_problem() {
     let y_param = FloatParam::new(-5.0, 5.0);
 
     study
-        .optimize(50, |trial| {
+        .optimize(50, |trial: &mut optimizer::Trial| {
             let x = x_param.suggest(trial)?;
             let y = y_param.suggest(trial)?;
             Ok::<_, Error>(sphere(x, y))
@@ -290,7 +290,7 @@ fn test_both_samplers_work_on_independent_problem() {
         let y_param = FloatParam::new(-5.0, 5.0);
 
         study
-            .optimize(n_trials, |trial| {
+            .optimize(n_trials, |trial: &mut optimizer::Trial| {
                 let x = x_param.suggest(trial)?;
                 let y = y_param.suggest(trial)?;
                 Ok::<_, Error>(sphere(x, y))
@@ -312,7 +312,7 @@ fn test_both_samplers_work_on_independent_problem() {
         let y_param = FloatParam::new(-5.0, 5.0);
 
         study
-            .optimize(n_trials, |trial| {
+            .optimize(n_trials, |trial: &mut optimizer::Trial| {
                 let x = x_param.suggest(trial)?;
                 let y = y_param.suggest(trial)?;
                 Ok::<_, Error>(sphere(x, y))
@@ -360,7 +360,7 @@ fn test_multivariate_tpe_with_group_decomposition() {
     let y_param = FloatParam::new(-5.0, 5.0);
 
     study
-        .optimize(50, |trial| {
+        .optimize(50, |trial: &mut optimizer::Trial| {
             let x = x_param.suggest(trial)?;
             let y = y_param.suggest(trial)?;
             Ok::<_, Error>(sphere(x, y))
@@ -396,7 +396,7 @@ fn test_multivariate_tpe_mixed_parameter_types() {
     let mode_param = CategoricalParam::new(vec!["a", "b", "c"]);
 
     study
-        .optimize(50, |trial| {
+        .optimize(50, |trial: &mut optimizer::Trial| {
             let x = x_param.suggest(trial)?;
             let n = n_param.suggest(trial)?;
             let mode = mode_param.suggest(trial)?;

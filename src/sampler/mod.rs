@@ -138,7 +138,7 @@ impl<V> CompletedTrial<V> {
     /// let x = FloatParam::new(-10.0, 10.0);
     ///
     /// study
-    ///     .optimize(5, |trial| {
+    ///     .optimize(5, |trial: &mut optimizer::Trial| {
     ///         let val = x.suggest(trial)?;
     ///         Ok::<_, optimizer::Error>(val * val)
     ///     })

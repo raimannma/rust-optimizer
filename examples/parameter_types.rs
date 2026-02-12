@@ -41,7 +41,7 @@ fn main() {
 
     // --- Run the optimization ---
     study
-        .optimize(30, |trial| {
+        .optimize(30, |trial: &mut optimizer::Trial| {
             let lr_val = lr.suggest(trial)?;
             let layers = n_layers.suggest(trial)?;
             let opt = optimizer.suggest(trial)?;

@@ -8,7 +8,7 @@ fn test_summary_with_completed_trials() {
     let x = FloatParam::new(0.0, 10.0).name("x");
 
     study
-        .optimize(5, |trial| {
+        .optimize(5, |trial: &mut optimizer::Trial| {
             let val = x.suggest(trial)?;
             Ok::<_, Error>(val * val)
         })
@@ -61,7 +61,7 @@ fn test_display_matches_summary() {
     let x = FloatParam::new(0.0, 10.0).name("x");
 
     study
-        .optimize(3, |trial| {
+        .optimize(3, |trial: &mut optimizer::Trial| {
             let val = x.suggest(trial)?;
             Ok::<_, Error>(val)
         })

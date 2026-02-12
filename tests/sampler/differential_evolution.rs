@@ -10,7 +10,7 @@ fn sphere_function() {
     let y = FloatParam::new(-5.0, 5.0).name("y");
 
     study
-        .optimize(200, |trial| {
+        .optimize(200, |trial: &mut optimizer::Trial| {
             let xv = x.suggest(trial)?;
             let yv = y.suggest(trial)?;
             Ok::<_, Error>(xv * xv + yv * yv)
@@ -37,7 +37,7 @@ fn rosenbrock_function() {
     let y = FloatParam::new(-5.0, 5.0).name("y");
 
     study
-        .optimize(400, |trial| {
+        .optimize(400, |trial: &mut optimizer::Trial| {
             let xv = x.suggest(trial)?;
             let yv = y.suggest(trial)?;
             let val = (1.0 - xv).powi(2) + 100.0 * (yv - xv * xv).powi(2);
@@ -67,7 +67,7 @@ fn rastrigin_function() {
     let y = FloatParam::new(-5.12, 5.12).name("y");
 
     study
-        .optimize(500, |trial| {
+        .optimize(500, |trial: &mut optimizer::Trial| {
             let xv = x.suggest(trial)?;
             let yv = y.suggest(trial)?;
             let val = 20.0
@@ -95,7 +95,7 @@ fn bounds_respected() {
     let y = FloatParam::new(0.0, 10.0).name("y");
 
     study
-        .optimize(100, |trial| {
+        .optimize(100, |trial: &mut optimizer::Trial| {
             let xv = x.suggest(trial)?;
             let yv = y.suggest(trial)?;
             Ok::<_, Error>(xv + yv)
@@ -123,7 +123,7 @@ fn strategy_best1() {
     let y = FloatParam::new(-5.0, 5.0).name("y");
 
     study
-        .optimize(200, |trial| {
+        .optimize(200, |trial: &mut optimizer::Trial| {
             let xv = x.suggest(trial)?;
             let yv = y.suggest(trial)?;
             Ok::<_, Error>(xv * xv + yv * yv)
@@ -151,7 +151,7 @@ fn strategy_current_to_best1() {
     let y = FloatParam::new(-5.0, 5.0).name("y");
 
     study
-        .optimize(200, |trial| {
+        .optimize(200, |trial: &mut optimizer::Trial| {
             let xv = x.suggest(trial)?;
             let yv = y.suggest(trial)?;
             Ok::<_, Error>(xv * xv + yv * yv)
@@ -175,7 +175,7 @@ fn mixed_params_float_and_categorical() {
     let cat = CategoricalParam::new(vec!["a", "b", "c"]).name("cat");
 
     study
-        .optimize(100, |trial| {
+        .optimize(100, |trial: &mut optimizer::Trial| {
             let xv = x.suggest(trial)?;
             let cv = cat.suggest(trial)?;
             let penalty = match cv {
@@ -204,7 +204,7 @@ fn seeded_reproducibility() {
         let sampler = DifferentialEvolutionSampler::with_seed(seed);
         let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
         study
-            .optimize(50, |trial| {
+            .optimize(50, |trial: &mut optimizer::Trial| {
                 let xv = x.suggest(trial)?;
                 let yv = y.suggest(trial)?;
                 Ok::<_, Error>(xv * xv + yv * yv)
@@ -227,7 +227,7 @@ fn different_seeds_different_results() {
         let sampler = DifferentialEvolutionSampler::with_seed(seed);
         let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
         study
-            .optimize(20, |trial| {
+            .optimize(20, |trial: &mut optimizer::Trial| {
                 let xv = x.suggest(trial)?;
                 let yv = y.suggest(trial)?;
                 Ok::<_, Error>(xv * xv + yv * yv)
@@ -252,7 +252,7 @@ fn single_dimension() {
     let x = FloatParam::new(-10.0, 10.0).name("x");
 
     study
-        .optimize(100, |trial| {
+        .optimize(100, |trial: &mut optimizer::Trial| {
             let xv = x.suggest(trial)?;
             Ok::<_, Error>((xv - 3.0).powi(2))
         })
@@ -274,7 +274,7 @@ fn integer_params() {
     let n = IntParam::new(1, 20).name("n");
 
     study
-        .optimize(100, |trial| {
+        .optimize(100, |trial: &mut optimizer::Trial| {
             let nv = n.suggest(trial)?;
             // Minimum at n = 10
             Ok::<_, Error>(((nv - 10) * (nv - 10)) as f64)
@@ -302,7 +302,7 @@ fn log_scale_params() {
     let lr = FloatParam::new(1e-5, 1.0).log_scale().name("lr");
 
     study
-        .optimize(100, |trial| {
+        .optimize(100, |trial: &mut optimizer::Trial| {
             let lrv = lr.suggest(trial)?;
             // Minimum at lr = 0.01
             Ok::<_, Error>((lrv.ln() - 0.01_f64.ln()).powi(2))
@@ -332,7 +332,7 @@ fn custom_mutation_and_crossover() {
     let y = FloatParam::new(-5.0, 5.0).name("y");
 
     study
-        .optimize(100, |trial| {
+        .optimize(100, |trial: &mut optimizer::Trial| {
             let xv = x.suggest(trial)?;
             let yv = y.suggest(trial)?;
             Ok::<_, Error>(xv * xv + yv * yv)

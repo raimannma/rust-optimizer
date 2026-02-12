@@ -26,7 +26,7 @@
 //!
 //! let study: Study<f64> = Study::new(Direction::Minimize);
 //! # let x = FloatParam::new(0.0, 1.0);
-//! # study.optimize(10, |trial| {
+//! # study.optimize(10, |trial: &mut optimizer::Trial| {
 //! #     let v = x.suggest(trial)?;
 //! #     Ok::<_, optimizer::Error>(v * v)
 //! # }).unwrap();

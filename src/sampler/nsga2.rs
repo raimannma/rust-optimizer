@@ -55,7 +55,7 @@
 //!
 //! let x = FloatParam::new(0.0, 1.0);
 //! study
-//!     .optimize(50, |trial| {
+//!     .optimize(50, |trial: &mut optimizer::Trial| {
 //!         let xv = x.suggest(trial)?;
 //!         Ok::<_, optimizer::Error>(vec![xv * xv, (xv - 1.0).powi(2)])
 //!     })

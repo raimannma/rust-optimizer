@@ -205,7 +205,7 @@ pub enum ConstantLiarStrategy {
 /// let y = FloatParam::new(-5.0, 5.0);
 ///
 /// study
-///     .optimize(30, |trial| {
+///     .optimize(30, |trial: &mut optimizer::Trial| {
 ///         let xv = x.suggest(trial)?;
 ///         let yv = y.suggest(trial)?;
 ///         Ok::<_, optimizer::Error>(xv * xv + yv * yv)

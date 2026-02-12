@@ -35,7 +35,7 @@
 //! let x = FloatParam::new(0.0, 1.0);
 //!
 //! study
-//!     .optimize(20, |trial| {
+//!     .optimize(20, |trial: &mut optimizer::Trial| {
 //!         let xv = x.suggest(trial)?;
 //!         Ok::<_, optimizer::Error>(vec![xv, 1.0 - xv])
 //!     })
@@ -229,7 +229,7 @@ impl Sampler for MoSamplerBridge {
 /// let x = FloatParam::new(0.0, 1.0);
 ///
 /// study
-///     .optimize(30, |trial| {
+///     .optimize(30, |trial: &mut optimizer::Trial| {
 ///         let xv = x.suggest(trial)?;
 ///         Ok::<_, optimizer::Error>(vec![xv, 1.0 - xv])
 ///     })

@@ -18,7 +18,7 @@ fn csv_includes_all_trial_data() {
     let y = IntParam::new(1, 5).name("y");
 
     study
-        .optimize(3, |trial| {
+        .optimize(3, |trial: &mut optimizer::Trial| {
             let xv = x.suggest(trial)?;
             let yv = y.suggest(trial)?;
             Ok::<_, optimizer::Error>(xv + yv as f64)
@@ -124,7 +124,7 @@ fn csv_output_is_parseable() {
     let layers = IntParam::new(1, 5).name("n_layers");
 
     study
-        .optimize(5, |trial| {
+        .optimize(5, |trial: &mut optimizer::Trial| {
             let l = lr.suggest(trial)?;
             let n = layers.suggest(trial)?;
             Ok::<_, optimizer::Error>(l * n as f64)
@@ -153,7 +153,7 @@ fn export_csv_writes_file() {
     let study: Study<f64> = Study::with_sampler(Direction::Minimize, RandomSampler::with_seed(42));
     let x = FloatParam::new(0.0, 10.0).name("x");
     study
-        .optimize(3, |trial| {
+        .optimize(3, |trial: &mut optimizer::Trial| {
             let xv = x.suggest(trial)?;
             Ok::<_, optimizer::Error>(xv * xv)
         })
@@ -179,7 +179,7 @@ fn export_json_writes_file() {
     let study: Study<f64> = Study::with_sampler(Direction::Minimize, RandomSampler::with_seed(42));
     let x = FloatParam::new(0.0, 10.0).name("x");
     study
-        .optimize(3, |trial| {
+        .optimize(3, |trial: &mut optimizer::Trial| {
             let xv = x.suggest(trial)?;
             Ok::<_, optimizer::Error>(xv * xv)
         })
@@ -214,7 +214,7 @@ fn csv_includes_user_attributes() {
     let x = FloatParam::new(0.0, 10.0).name("x");
 
     study
-        .optimize(2, |trial| {
+        .optimize(2, |trial: &mut optimizer::Trial| {
             let xv = x.suggest(trial)?;
             trial.set_user_attr("training_time_secs", 45.2);
             Ok::<_, optimizer::Error>(xv * xv)

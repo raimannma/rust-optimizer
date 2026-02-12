@@ -41,7 +41,7 @@
 //! let y = FloatParam::new(0.0, 10.0).name("y");
 //!
 //! study
-//!     .optimize(50, |trial| {
+//!     .optimize(50, |trial: &mut optimizer::Trial| {
 //!         let xv = x.suggest(trial)?;
 //!         let yv = y.suggest(trial)?;
 //!         // x matters much more than y

@@ -66,7 +66,7 @@
 //! let x = FloatParam::new(0.0, 1.0);
 //! let y = FloatParam::new(0.0, 1.0);
 //! study
-//!     .optimize(100, |trial| {
+//!     .optimize(100, |trial: &mut optimizer::Trial| {
 //!         let xv = x.suggest(trial)?;
 //!         let yv = y.suggest(trial)?;
 //!         Ok::<_, optimizer::Error>(vec![xv, yv, (1.0 - xv - yv).abs()])

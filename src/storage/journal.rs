@@ -42,7 +42,7 @@
 //! let storage = JournalStorage::<f64>::new("trials.jsonl");
 //! let mut study = Study::builder().minimize().storage(storage).build();
 //! study
-//!     .optimize(50, |trial| {
+//!     .optimize(50, |trial: &mut optimizer::Trial| {
 //!         let x = FloatParam::new(-5.0, 5.0).suggest(trial)?;
 //!         Ok::<_, optimizer::Error>(x * x)
 //!     })
@@ -52,7 +52,7 @@
 //! let storage = JournalStorage::<f64>::open("trials.jsonl").unwrap();
 //! let mut study = Study::builder().minimize().storage(storage).build();
 //! study
-//!     .optimize(50, |trial| {
+//!     .optimize(50, |trial: &mut optimizer::Trial| {
 //!         let x = FloatParam::new(-5.0, 5.0).suggest(trial)?;
 //!         Ok::<_, optimizer::Error>(x * x)
 //!     })

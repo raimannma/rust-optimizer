@@ -10,7 +10,7 @@ fn fanova_dominant_parameter() {
 
     let study: Study<f64> = Study::with_sampler(Direction::Minimize, RandomSampler::with_seed(42));
     study
-        .optimize(50, |trial| {
+        .optimize(50, |trial: &mut optimizer::Trial| {
             let xv = x.suggest(trial)?;
             let _yv = y.suggest(trial)?;
             Ok::<_, Error>(xv * xv)
@@ -34,7 +34,7 @@ fn fanova_interaction() {
 
     let study: Study<f64> = Study::with_sampler(Direction::Minimize, RandomSampler::with_seed(7));
     study
-        .optimize(100, |trial| {
+        .optimize(100, |trial: &mut optimizer::Trial| {
             let xv = x.suggest(trial)?;
             let yv = y.suggest(trial)?;
             Ok::<_, Error>(xv * yv)
@@ -62,7 +62,7 @@ fn fanova_consistent_with_correlation() {
 
     let study: Study<f64> = Study::with_sampler(Direction::Minimize, RandomSampler::with_seed(99));
     study
-        .optimize(80, |trial| {
+        .optimize(80, |trial: &mut optimizer::Trial| {
             let xv = x.suggest(trial)?;
             let yv = y.suggest(trial)?;
             Ok::<_, Error>(3.0 * xv + 0.5 * yv)

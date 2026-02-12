@@ -18,7 +18,7 @@ fn test_basic_two_objective_random() {
     let x = FloatParam::new(0.0, 1.0);
 
     study
-        .optimize(30, |trial| {
+        .optimize(30, |trial: &mut optimizer::Trial| {
             let xv = x.suggest(trial)?;
             Ok::<_, optimizer::Error>(vec![xv, 1.0 - xv])
         })
@@ -50,7 +50,7 @@ fn test_dimension_mismatch_error() {
     let study = MultiObjectiveStudy::new(vec![Direction::Minimize, Direction::Minimize]);
     let x = FloatParam::new(0.0, 1.0);
 
-    let result = study.optimize(1, |trial| {
+    let result = study.optimize(1, |trial: &mut optimizer::Trial| {
         let xv = x.suggest(trial)?;
         // Return wrong number of values
         Ok::<_, optimizer::Error>(vec![xv])
@@ -104,7 +104,7 @@ fn test_n_trials_counting() {
     let x = FloatParam::new(0.0, 1.0);
 
     study
-        .optimize(5, |trial| {
+        .optimize(5, |trial: &mut optimizer::Trial| {
             let xv = x.suggest(trial)?;
             Ok::<_, optimizer::Error>(vec![xv, 1.0 - xv])
         })
@@ -124,7 +124,7 @@ fn test_three_objectives() {
     let y = FloatParam::new(0.0, 1.0);
 
     study
-        .optimize(30, |trial| {
+        .optimize(30, |trial: &mut optimizer::Trial| {
             let xv = x.suggest(trial)?;
             let yv = y.suggest(trial)?;
             Ok::<_, optimizer::Error>(vec![xv, yv, 1.0 - xv - yv])
@@ -150,7 +150,7 @@ fn test_trials_accessor() {
     let x = FloatParam::new(0.0, 1.0);
 
     study
-        .optimize(3, |trial| {
+        .optimize(3, |trial: &mut optimizer::Trial| {
             let xv = x.suggest(trial)?;
             Ok::<_, optimizer::Error>(vec![xv, 1.0 - xv])
         })
@@ -178,7 +178,7 @@ fn test_nsga2_zdt1() {
         MultiObjectiveStudy::with_sampler(vec![Direction::Minimize, Direction::Minimize], sampler);
 
     study
-        .optimize(200, |trial| {
+        .optimize(200, |trial: &mut optimizer::Trial| {
             let xs: Vec<f64> = params
                 .iter()
                 .map(|p| p.suggest(trial))
@@ -224,7 +224,7 @@ fn test_nsga2_with_seed_reproducible() {
             sampler,
         );
         study
-            .optimize(30, |trial| {
+            .optimize(30, |trial: &mut optimizer::Trial| {
                 let xv = x.suggest(trial)?;
                 let yv = y.suggest(trial)?;
                 Ok::<_, optimizer::Error>(vec![xv, yv])
@@ -256,7 +256,7 @@ fn test_nsga2_builder() {
     let x = FloatParam::new(0.0, 1.0);
 
     study
-        .optimize(30, |trial| {
+        .optimize(30, |trial: &mut optimizer::Trial| {
             let xv = x.suggest(trial)?;
             Ok::<_, optimizer::Error>(vec![xv, 1.0 - xv])
         })
@@ -275,7 +275,7 @@ fn test_nsga2_categorical_params() {
     let cat = CategoricalParam::new(vec!["a", "b", "c"]);
 
     study
-        .optimize(30, |trial| {
+        .optimize(30, |trial: &mut optimizer::Trial| {
             let xv = x.suggest(trial)?;
             let cv = cat.suggest(trial)?;
             let bonus = match cv {
@@ -301,7 +301,7 @@ fn test_nsga2_constraints() {
     let x = FloatParam::new(0.0, 1.0);
 
     study
-        .optimize(50, |trial| {
+        .optimize(50, |trial: &mut optimizer::Trial| {
             let xv = x.suggest(trial)?;
             // Constraint: x >= 0.3 (i.e. 0.3 - x <= 0)
             trial.set_constraints(vec![0.3 - xv]);
@@ -326,7 +326,7 @@ fn test_multi_objective_trial_get() {
     let x = FloatParam::new(0.0, 10.0).name("x");
 
     study
-        .optimize(5, |trial| {
+        .optimize(5, |trial: &mut optimizer::Trial| {
             let xv = x.suggest(trial)?;
             Ok::<_, optimizer::Error>(vec![xv, 10.0 - xv])
         })
@@ -345,7 +345,7 @@ fn test_multi_objective_trial_is_feasible() {
     let x = FloatParam::new(0.0, 1.0);
 
     study
-        .optimize(10, |trial| {
+        .optimize(10, |trial: &mut optimizer::Trial| {
             let xv = x.suggest(trial)?;
             trial.set_constraints(vec![0.5 - xv]); // feasible if x >= 0.5
             Ok::<_, optimizer::Error>(vec![xv, 1.0 - xv])
@@ -369,7 +369,7 @@ fn test_multi_objective_trial_user_attrs() {
     let x = FloatParam::new(0.0, 1.0);
 
     study
-        .optimize(3, |trial| {
+        .optimize(3, |trial: &mut optimizer::Trial| {
             let xv = x.suggest(trial)?;
             trial.set_user_attr("iteration", 42_i64);
             Ok::<_, optimizer::Error>(vec![xv, 1.0 - xv])
@@ -409,7 +409,7 @@ fn test_nsga3_zdt1() {
         MultiObjectiveStudy::with_sampler(vec![Direction::Minimize, Direction::Minimize], sampler);
 
     study
-        .optimize(200, |trial| {
+        .optimize(200, |trial: &mut optimizer::Trial| {
             let xs: Vec<f64> = params
                 .iter()
                 .map(|p| p.suggest(trial))
@@ -458,7 +458,7 @@ fn test_nsga3_four_objectives() {
     let study = MultiObjectiveStudy::with_sampler(directions, sampler);
 
     study
-        .optimize(500, |trial| {
+        .optimize(500, |trial: &mut optimizer::Trial| {
             let xs: Vec<f64> = params
                 .iter()
                 .map(|p| p.suggest(trial))
@@ -506,7 +506,7 @@ fn test_nsga3_reproducible() {
             sampler,
         );
         study
-            .optimize(30, |trial| {
+            .optimize(30, |trial: &mut optimizer::Trial| {
                 let xv = x.suggest(trial)?;
                 let yv = y.suggest(trial)?;
                 Ok::<_, optimizer::Error>(vec![xv, yv])
@@ -539,7 +539,7 @@ fn test_nsga3_builder() {
     let x = FloatParam::new(0.0, 1.0);
 
     study
-        .optimize(30, |trial| {
+        .optimize(30, |trial: &mut optimizer::Trial| {
             let xv = x.suggest(trial)?;
             Ok::<_, optimizer::Error>(vec![xv, 1.0 - xv])
         })
@@ -557,7 +557,7 @@ fn test_nsga3_constraints() {
     let x = FloatParam::new(0.0, 1.0);
 
     study
-        .optimize(50, |trial| {
+        .optimize(50, |trial: &mut optimizer::Trial| {
             let xv = x.suggest(trial)?;
             trial.set_constraints(vec![0.3 - xv]);
             Ok::<_, optimizer::Error>(vec![xv, 1.0 - xv])
@@ -588,7 +588,7 @@ fn test_moead_zdt1_tchebycheff() {
         MultiObjectiveStudy::with_sampler(vec![Direction::Minimize, Direction::Minimize], sampler);
 
     study
-        .optimize(200, |trial| {
+        .optimize(200, |trial: &mut optimizer::Trial| {
             let xs: Vec<f64> = params
                 .iter()
                 .map(|p| p.suggest(trial))
@@ -635,7 +635,7 @@ fn test_moead_zdt1_weighted_sum() {
         MultiObjectiveStudy::with_sampler(vec![Direction::Minimize, Direction::Minimize], sampler);
 
     study
-        .optimize(200, |trial| {
+        .optimize(200, |trial: &mut optimizer::Trial| {
             let xs: Vec<f64> = params
                 .iter()
                 .map(|p| p.suggest(trial))
@@ -666,7 +666,7 @@ fn test_moead_zdt1_pbi() {
         MultiObjectiveStudy::with_sampler(vec![Direction::Minimize, Direction::Minimize], sampler);
 
     study
-        .optimize(200, |trial| {
+        .optimize(200, |trial: &mut optimizer::Trial| {
             let xs: Vec<f64> = params
                 .iter()
                 .map(|p| p.suggest(trial))
@@ -695,7 +695,7 @@ fn test_moead_reproducible() {
             sampler,
         );
         study
-            .optimize(30, |trial| {
+            .optimize(30, |trial: &mut optimizer::Trial| {
                 let xv = x.suggest(trial)?;
                 let yv = y.suggest(trial)?;
                 Ok::<_, optimizer::Error>(vec![xv, yv])
@@ -729,7 +729,7 @@ fn test_moead_builder() {
     let x = FloatParam::new(0.0, 1.0);
 
     study
-        .optimize(30, |trial| {
+        .optimize(30, |trial: &mut optimizer::Trial| {
             let xv = x.suggest(trial)?;
             Ok::<_, optimizer::Error>(vec![xv, 1.0 - xv])
         })

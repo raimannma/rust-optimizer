@@ -13,7 +13,7 @@ fn round_trip_save_load() {
     let n = IntParam::new(1, 100).name("n");
 
     study
-        .optimize(5, |trial| {
+        .optimize(5, |trial: &mut optimizer::Trial| {
             let x_val = x.suggest(trial)?;
             let n_val = n.suggest(trial)?;
             Ok::<_, optimizer::Error>(x_val * x_val + n_val as f64)
@@ -51,7 +51,7 @@ fn json_output_is_human_readable() {
     let x = FloatParam::new(0.0, 1.0).name("x");
 
     study
-        .optimize(2, |trial| {
+        .optimize(2, |trial: &mut optimizer::Trial| {
             let v = x.suggest(trial)?;
             Ok::<_, optimizer::Error>(v)
         })
@@ -153,7 +153,7 @@ fn round_trip_preserves_trial_id_counter() {
     let x = FloatParam::new(0.0, 1.0);
 
     study
-        .optimize(10, |trial| {
+        .optimize(10, |trial: &mut optimizer::Trial| {
             let v = x.suggest(trial)?;
             Ok::<_, optimizer::Error>(v)
         })
@@ -182,7 +182,7 @@ fn save_and_resume_continues_trial_ids() {
 
     // Run 10 trials
     study
-        .optimize(10, |trial| {
+        .optimize(10, |trial: &mut optimizer::Trial| {
             let v = x.suggest(trial)?;
             Ok::<_, optimizer::Error>(v * v)
         })
@@ -196,7 +196,7 @@ fn save_and_resume_continues_trial_ids() {
     // Continue with 5 more trials
     let remaining = 15 - loaded.n_trials();
     loaded
-        .optimize(remaining, |trial| {
+        .optimize(remaining, |trial: &mut optimizer::Trial| {
             let v = x.suggest(trial)?;
             Ok::<_, optimizer::Error>(v * v)
         })
@@ -223,7 +223,7 @@ fn save_uses_atomic_write() {
     let save_path = dir.join("atomic.json");
 
     study
-        .optimize(3, |trial| {
+        .optimize(3, |trial: &mut optimizer::Trial| {
             let v = x.suggest(trial)?;
             Ok::<_, optimizer::Error>(v)
         })

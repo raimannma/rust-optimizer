@@ -180,7 +180,7 @@ fn parameter_api_with_study() {
 
     let study: Study<f64> = Study::new(Direction::Minimize);
     study
-        .optimize(5, |trial| {
+        .optimize(5, |trial: &mut optimizer::Trial| {
             let x = x_param.suggest(trial)?;
             let n = n_param.suggest(trial)?;
             let dropout = dropout_param.suggest(trial)?;

@@ -26,7 +26,7 @@ fn main() -> optimizer::Result<()> {
 
     let n_epochs: u64 = 20;
 
-    study.optimize(30, |trial| {
+    study.optimize(30, |trial: &mut optimizer::Trial| {
         let lr_val = lr.suggest(trial)?;
         let mom = momentum.suggest(trial)?;
 

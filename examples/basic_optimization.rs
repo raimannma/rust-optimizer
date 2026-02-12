@@ -17,7 +17,7 @@ fn main() {
 
     // Run 50 trials, each evaluating f(x) = (x - 3)²
     study
-        .optimize(50, |trial| {
+        .optimize(50, |trial: &mut optimizer::Trial| {
             let x_val = x.suggest(trial)?;
             let value = (x_val - 3.0).powi(2);
             Ok::<_, Error>(value)

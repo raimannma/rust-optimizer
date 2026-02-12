@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
 
 use optimizer::parameter::{FloatParam, IntParam, ParamValue, Parameter};
@@ -73,16 +74,17 @@ fn test_enqueue_with_optimize() {
     study.enqueue(HashMap::from([(x.id(), ParamValue::Float(1.0))]));
     study.enqueue(HashMap::from([(x.id(), ParamValue::Float(2.0))]));
 
-    let mut values = Vec::new();
+    let values = RefCell::new(Vec::new());
 
     study
-        .optimize(5, |trial| {
+        .optimize(5, |trial: &mut optimizer::Trial| {
             let x_val = x.suggest(trial)?;
-            values.push(x_val);
+            values.borrow_mut().push(x_val);
             Ok::<_, Error>(x_val * x_val)
         })
         .unwrap();
 
+    let values = values.into_inner();
     // First two trials should use enqueued values
     assert_eq!(values[0], 1.0);
     assert_eq!(values[1], 2.0);
@@ -117,7 +119,7 @@ fn test_enqueue_trials_appear_in_completed_trials() {
     study.enqueue(HashMap::from([(x.id(), ParamValue::Float(7.0))]));
 
     study
-        .optimize(1, |trial| {
+        .optimize(1, |trial: &mut optimizer::Trial| {
             let x_val = x.suggest(trial)?;
             Ok::<_, Error>(x_val)
         })
@@ -178,7 +180,7 @@ fn test_enqueue_counted_in_n_trials() {
     study.enqueue(HashMap::from([(x.id(), ParamValue::Float(2.0))]));
 
     study
-        .optimize(5, |trial| {
+        .optimize(5, |trial: &mut optimizer::Trial| {
             let x_val = x.suggest(trial)?;
             Ok::<_, Error>(x_val)
         })

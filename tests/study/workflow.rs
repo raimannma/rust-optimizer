@@ -8,7 +8,7 @@ fn test_study_basic_workflow() {
     let x_param = FloatParam::new(-5.0, 5.0);
 
     study
-        .optimize(10, |trial| {
+        .optimize(10, |trial: &mut optimizer::Trial| {
             let x = x_param.suggest(trial)?;
             Ok::<_, Error>(x * x)
         })
@@ -25,11 +25,11 @@ fn test_study_with_failures() {
     let x_param = FloatParam::new(-5.0, 5.0);
 
     // Every other trial fails
-    let mut counter = 0;
+    let counter = std::cell::Cell::new(0u32);
     study
-        .optimize(10, |trial| {
-            counter += 1;
-            if counter % 2 == 0 {
+        .optimize(10, |trial: &mut optimizer::Trial| {
+            counter.set(counter.get() + 1);
+            if counter.get().is_multiple_of(2) {
                 return Err::<f64, &str>("intentional failure");
             }
             let x = x_param.suggest(trial).map_err(|_| "param error")?;
@@ -64,7 +64,7 @@ fn test_study_trials_iteration() {
     let x_param = FloatParam::new(0.0, 1.0);
 
     study
-        .optimize(5, |trial| {
+        .optimize(5, |trial: &mut optimizer::Trial| {
             let x = x_param.suggest(trial)?;
             Ok::<_, Error>(x)
         })
@@ -95,7 +95,7 @@ fn test_study_set_sampler() {
     let x_param = FloatParam::new(-5.0, 5.0);
 
     study
-        .optimize(10, |trial| {
+        .optimize(10, |trial: &mut optimizer::Trial| {
             let x = x_param.suggest(trial)?;
             Ok::<_, Error>(x * x)
         })
@@ -110,7 +110,7 @@ fn test_study_with_i32_value_type() {
     let x_param = IntParam::new(-10, 10);
 
     study
-        .optimize(10, |trial| {
+        .optimize(10, |trial: &mut optimizer::Trial| {
             let x = x_param.suggest(trial)?;
             Ok::<_, Error>(x.abs() as i32)
         })
@@ -125,7 +125,9 @@ fn test_study_with_i32_value_type() {
 fn test_optimize_all_trials_fail() {
     let study: Study<f64> = Study::new(Direction::Minimize);
 
-    let result = study.optimize(5, |_trial| Err::<f64, &str>("always fails"));
+    let result = study.optimize(5, |_trial: &mut optimizer::Trial| {
+        Err::<f64, &str>("always fails")
+    });
 
     assert!(
         matches!(result, Err(Error::NoCompletedTrials)),
@@ -139,7 +141,7 @@ fn test_best_value() {
     let x_param = FloatParam::new(0.0, 10.0);
 
     study
-        .optimize(10, |trial| {
+        .optimize(10, |trial: &mut optimizer::Trial| {
             let x = x_param.suggest(trial)?;
             Ok::<_, Error>(x)
         })
@@ -160,7 +162,7 @@ fn test_best_trial_with_nan_values() {
     let x_param = FloatParam::new(0.0, 10.0);
 
     study
-        .optimize(5, |trial| {
+        .optimize(5, |trial: &mut optimizer::Trial| {
             let x = x_param.suggest(trial)?;
             Ok::<_, Error>(x)
         })
@@ -199,7 +201,7 @@ fn test_multiple_params_in_optimization() {
     let n_param = IntParam::new(1, 5);
 
     study
-        .optimize(10, |trial| {
+        .optimize(10, |trial: &mut optimizer::Trial| {
             let x = x_param.suggest(trial)?;
             let n = n_param.suggest(trial)?;
             Ok::<_, Error>(x * x + n as f64)
@@ -216,7 +218,7 @@ fn test_suggest_bool_in_optimization() {
     let x_param = FloatParam::new(0.0, 10.0);
 
     study
-        .optimize(10, |trial| {
+        .optimize(10, |trial: &mut optimizer::Trial| {
             let use_feature = use_feature_param.suggest(trial)?;
             let x = x_param.suggest(trial)?;
 
@@ -235,7 +237,7 @@ fn test_completed_trial_get() {
     let n_param = IntParam::new(1, 10).name("n");
 
     study
-        .optimize(5, |trial| {
+        .optimize(5, |trial: &mut optimizer::Trial| {
             let x = x_param.suggest(trial)?;
             let n = n_param.suggest(trial)?;
             Ok::<_, Error>(x * x + n as f64)

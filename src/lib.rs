@@ -26,7 +26,7 @@
 //! let x = FloatParam::new(-10.0, 10.0).name("x");
 //!
 //! study
-//!     .optimize(50, |trial| {
+//!     .optimize(50, |trial: &mut optimizer::Trial| {
 //!         let v = x.suggest(trial)?;
 //!         Ok::<_, Error>((v - 3.0).powi(2))
 //!     })

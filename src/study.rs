@@ -411,22 +411,6 @@ where
             .map(|t| t.id)
     }
 
-    /// Create a new trial with pre-set parameter values.
-    ///
-    /// The trial gets a new unique ID but reuses the given parameters. When
-    /// `suggest_param` is called on the resulting trial, fixed values are
-    /// returned instead of sampling.
-    fn create_trial_with_params(&self, params: HashMap<ParamId, ParamValue>) -> Trial {
-        let id = self.next_trial_id();
-        let mut trial = if let Some(factory) = &self.trial_factory {
-            factory(id)
-        } else {
-            Trial::new(id)
-        };
-        trial.set_fixed_params(params);
-        trial
-    }
-
     /// Return the number of enqueued parameter configurations.
     ///
     /// See [`enqueue`](Self::enqueue) for how to add configurations.
@@ -879,12 +863,15 @@ where
         completed
     }
 
-    /// Run optimization with a closure.
+    /// Run optimization with an objective.
     ///
-    /// Runs up to `n_trials` evaluations of `objective` sequentially.
-    /// For lifecycle hooks (early stopping, retries), implement the
-    /// [`Objective`](crate::Objective) trait and use
-    /// [`optimize_with`](Self::optimize_with) instead.
+    /// Accepts any [`Objective`](crate::Objective) implementation, including
+    /// plain closures (`Fn(&mut Trial) -> Result<V, E>`) thanks to the
+    /// blanket impl. Struct-based objectives can override
+    /// [`before_trial`](crate::Objective::before_trial) and
+    /// [`after_trial`](crate::Objective::after_trial) for early stopping.
+    ///
+    /// Runs up to `n_trials` evaluations sequentially.
     ///
     /// # Errors
     ///
@@ -911,10 +898,13 @@ where
     /// assert!(study.n_trials() > 0);
     /// assert!(study.best_value().unwrap() >= 0.0);
     /// ```
-    pub fn optimize<F, E>(&self, n_trials: usize, mut objective: F) -> crate::Result<()>
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn optimize(
+        &self,
+        n_trials: usize,
+        objective: impl crate::objective::Objective<V>,
+    ) -> crate::Result<()>
     where
-        F: FnMut(&mut Trial) -> Result<V, E>,
-        E: ToString + 'static,
         V: Clone + Default,
     {
         #[cfg(feature = "tracing")]
@@ -922,13 +912,44 @@ where
             tracing::info_span!("optimize", n_trials, direction = ?self.direction).entered();
 
         for _ in 0..n_trials {
+            if let ControlFlow::Break(()) = objective.before_trial(self) {
+                break;
+            }
+
             let mut trial = self.create_trial();
-            match objective(&mut trial) {
+            match objective.evaluate(&mut trial) {
                 Ok(value) => {
                     #[cfg(feature = "tracing")]
                     let trial_id = trial.id();
                     self.complete_trial(trial, value);
-                    trace_info!(trial_id, "trial completed");
+
+                    #[cfg(feature = "tracing")]
+                    {
+                        tracing::info!(trial_id, "trial completed");
+                        let trials = self.storage.trials_arc().read();
+                        if trials
+                            .iter()
+                            .filter(|t| t.state == TrialState::Complete)
+                            .count()
+                            == 1
+                            || trials.last().map(|t| t.id) == self.best_id(&trials)
+                        {
+                            tracing::info!(trial_id, "new best value found");
+                        }
+                    }
+
+                    // Fire after_trial hook
+                    let trials = self.storage.trials_arc().read();
+                    if let Some(completed) = trials.last() {
+                        let completed_clone = completed.clone();
+                        drop(trials);
+                        if let ControlFlow::Break(()) =
+                            objective.after_trial(self, &completed_clone)
+                        {
+                            // Return early — at least one trial completed.
+                            return Ok(());
+                        }
+                    }
                 }
                 Err(e) if is_trial_pruned(&e) => {
                     #[cfg(feature = "tracing")]
@@ -941,144 +962,6 @@ where
                     let trial_id = trial.id();
                     self.fail_trial(trial, e.to_string());
                     trace_debug!(trial_id, "trial failed");
-                }
-            }
-        }
-
-        let has_complete = self
-            .storage
-            .trials_arc()
-            .read()
-            .iter()
-            .any(|t| t.state == TrialState::Complete);
-        if !has_complete {
-            return Err(crate::Error::NoCompletedTrials);
-        }
-
-        Ok(())
-    }
-
-    /// Run optimization with an [`Objective`](crate::Objective) implementation.
-    ///
-    /// Like [`optimize`](Self::optimize), but accepts a struct implementing
-    /// [`Objective`](crate::Objective) for lifecycle hooks
-    /// ([`before_trial`](crate::Objective::before_trial),
-    /// [`after_trial`](crate::Objective::after_trial)) and automatic retries
-    /// ([`max_retries`](crate::Objective::max_retries)).
-    ///
-    /// # Errors
-    ///
-    /// Returns `Error::NoCompletedTrials` if no trials completed successfully.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use std::ops::ControlFlow;
-    ///
-    /// use optimizer::prelude::*;
-    ///
-    /// struct QuadraticObj {
-    ///     x: FloatParam,
-    ///     target: f64,
-    /// }
-    ///
-    /// impl Objective<f64> for QuadraticObj {
-    ///     type Error = Error;
-    ///     fn evaluate(&self, trial: &mut Trial) -> Result<f64> {
-    ///         let v = self.x.suggest(trial)?;
-    ///         Ok((v - 3.0).powi(2))
-    ///     }
-    ///     fn after_trial(&self, _: &Study<f64>, t: &CompletedTrial<f64>) -> ControlFlow<()> {
-    ///         if t.value < self.target {
-    ///             ControlFlow::Break(())
-    ///         } else {
-    ///             ControlFlow::Continue(())
-    ///         }
-    ///     }
-    /// }
-    ///
-    /// let study: Study<f64> = Study::new(Direction::Minimize);
-    /// let obj = QuadraticObj {
-    ///     x: FloatParam::new(-10.0, 10.0),
-    ///     target: 1.0,
-    /// };
-    /// study.optimize_with(200, obj).unwrap();
-    /// assert!(study.best_value().unwrap() < 1.0);
-    /// ```
-    #[allow(clippy::needless_pass_by_value)]
-    pub fn optimize_with(
-        &self,
-        n_trials: usize,
-        objective: impl crate::objective::Objective<V>,
-    ) -> crate::Result<()>
-    where
-        V: Clone + Default,
-    {
-        #[cfg(feature = "tracing")]
-        let _span =
-            tracing::info_span!("optimize_with", n_trials, direction = ?self.direction).entered();
-
-        let max_retries = objective.max_retries();
-
-        for _ in 0..n_trials {
-            if let ControlFlow::Break(()) = objective.before_trial(self) {
-                break;
-            }
-
-            let mut trial = self.create_trial();
-            let mut retries = 0;
-            loop {
-                match objective.evaluate(&mut trial) {
-                    Ok(value) => {
-                        #[cfg(feature = "tracing")]
-                        let trial_id = trial.id();
-                        self.complete_trial(trial, value);
-
-                        #[cfg(feature = "tracing")]
-                        {
-                            tracing::info!(trial_id, "trial completed");
-                            let trials = self.storage.trials_arc().read();
-                            if trials
-                                .iter()
-                                .filter(|t| t.state == TrialState::Complete)
-                                .count()
-                                == 1
-                                || trials.last().map(|t| t.id) == self.best_id(&trials)
-                            {
-                                tracing::info!(trial_id, "new best value found");
-                            }
-                        }
-
-                        // Fire after_trial hook
-                        let trials = self.storage.trials_arc().read();
-                        if let Some(completed) = trials.last() {
-                            let completed_clone = completed.clone();
-                            drop(trials);
-                            if let ControlFlow::Break(()) =
-                                objective.after_trial(self, &completed_clone)
-                            {
-                                // Return early — at least one trial completed.
-                                return Ok(());
-                            }
-                        }
-                        break;
-                    }
-                    Err(e) if !is_trial_pruned(&e) && retries < max_retries => {
-                        retries += 1;
-                        trial = self.create_trial_with_params(trial.params().clone());
-                    }
-                    Err(e) => {
-                        #[cfg(feature = "tracing")]
-                        let trial_id = trial.id();
-                        if is_trial_pruned(&e) {
-                            self.prune_trial(trial);
-                            trace_info!(trial_id, "trial pruned");
-                        } else {
-                            self.fail_trial(trial, e.to_string());
-                            trace_debug!(trial_id, "trial failed");
-                        }
-                        break;
-                    }
                 }
             }
         }
@@ -1097,13 +980,14 @@ where
         Ok(())
     }
 
-    /// Run async optimization with a closure.
+    /// Run async optimization with an objective.
     ///
-    /// Each evaluation is wrapped in
+    /// Like [`optimize`](Self::optimize), but each evaluation is wrapped in
     /// [`spawn_blocking`](tokio::task::spawn_blocking), keeping the async
     /// runtime responsive for CPU-bound objectives. Trials run sequentially.
     ///
-    /// For lifecycle hooks, use [`optimize_with_async`](Self::optimize_with_async).
+    /// Accepts any [`Objective`](crate::Objective) implementation, including
+    /// plain closures. Struct-based objectives can override lifecycle hooks.
     ///
     /// # Errors
     ///
@@ -1135,10 +1019,10 @@ where
     /// # }
     /// ```
     #[cfg(feature = "async")]
-    pub async fn optimize_async<F, E>(&self, n_trials: usize, objective: F) -> crate::Result<()>
+    pub async fn optimize_async<O>(&self, n_trials: usize, objective: O) -> crate::Result<()>
     where
-        F: Fn(&mut Trial) -> Result<V, E> + Send + Sync + 'static,
-        E: ToString + Send + 'static,
+        O: crate::objective::Objective<V> + Send + Sync + 'static,
+        O::Error: Send,
         V: Clone + Default + Send + 'static,
     {
         #[cfg(feature = "tracing")]
@@ -1148,10 +1032,14 @@ where
         let objective = Arc::new(objective);
 
         for _ in 0..n_trials {
+            if let ControlFlow::Break(()) = objective.before_trial(self) {
+                break;
+            }
+
             let obj = Arc::clone(&objective);
             let mut trial = self.create_trial();
             let result = tokio::task::spawn_blocking(move || {
-                let res = obj(&mut trial);
+                let res = obj.evaluate(&mut trial);
                 (trial, res)
             })
             .await
@@ -1163,6 +1051,18 @@ where
                     let trial_id = t.id();
                     self.complete_trial(t, value);
                     trace_info!(trial_id, "trial completed");
+
+                    // Fire after_trial hook
+                    let trials = self.storage.trials_arc().read();
+                    if let Some(completed) = trials.last() {
+                        let completed_clone = completed.clone();
+                        drop(trials);
+                        if let ControlFlow::Break(()) =
+                            objective.after_trial(self, &completed_clone)
+                        {
+                            return Ok(());
+                        }
+                    }
                 }
                 (t, Err(e)) if is_trial_pruned(&e) => {
                     #[cfg(feature = "tracing")]
@@ -1192,108 +1092,16 @@ where
         Ok(())
     }
 
-    /// Run async optimization with an [`Objective`](crate::Objective) implementation.
-    ///
-    /// Like [`optimize_async`](Self::optimize_async), but accepts a struct
-    /// implementing [`Objective`](crate::Objective) for lifecycle hooks and
-    /// automatic retries.
-    ///
-    /// # Errors
-    ///
-    /// Returns `Error::NoCompletedTrials` if no trials completed successfully.
-    /// Returns `Error::TaskError` if a spawned blocking task panics.
-    #[cfg(feature = "async")]
-    pub async fn optimize_with_async<O>(&self, n_trials: usize, objective: O) -> crate::Result<()>
-    where
-        O: crate::objective::Objective<V> + Send + Sync + 'static,
-        O::Error: Send,
-        V: Clone + Default + Send + 'static,
-    {
-        #[cfg(feature = "tracing")]
-        let _span =
-            tracing::info_span!("optimize_with_async", n_trials, direction = ?self.direction)
-                .entered();
-
-        let objective = Arc::new(objective);
-        let max_retries = objective.max_retries();
-
-        for _ in 0..n_trials {
-            if let ControlFlow::Break(()) = objective.before_trial(self) {
-                break;
-            }
-
-            let mut trial = self.create_trial();
-            let mut retries = 0;
-            loop {
-                let obj = Arc::clone(&objective);
-                let result = tokio::task::spawn_blocking(move || {
-                    let res = obj.evaluate(&mut trial);
-                    (trial, res)
-                })
-                .await
-                .map_err(|e| crate::Error::TaskError(e.to_string()))?;
-
-                match result {
-                    (t, Ok(value)) => {
-                        #[cfg(feature = "tracing")]
-                        let trial_id = t.id();
-                        self.complete_trial(t, value);
-                        trace_info!(trial_id, "trial completed");
-
-                        // Fire after_trial hook
-                        let trials = self.storage.trials_arc().read();
-                        if let Some(completed) = trials.last() {
-                            let completed_clone = completed.clone();
-                            drop(trials);
-                            if let ControlFlow::Break(()) =
-                                objective.after_trial(self, &completed_clone)
-                            {
-                                return Ok(());
-                            }
-                        }
-                        break;
-                    }
-                    (t, Err(e)) if !is_trial_pruned(&e) && retries < max_retries => {
-                        retries += 1;
-                        trial = self.create_trial_with_params(t.params().clone());
-                    }
-                    (t, Err(e)) => {
-                        #[cfg(feature = "tracing")]
-                        let trial_id = t.id();
-                        if is_trial_pruned(&e) {
-                            self.prune_trial(t);
-                            trace_info!(trial_id, "trial pruned");
-                        } else {
-                            self.fail_trial(t, e.to_string());
-                            trace_debug!(trial_id, "trial failed");
-                        }
-                        break;
-                    }
-                }
-            }
-        }
-
-        let has_complete = self
-            .storage
-            .trials_arc()
-            .read()
-            .iter()
-            .any(|t| t.state == TrialState::Complete);
-        if !has_complete {
-            return Err(crate::Error::NoCompletedTrials);
-        }
-
-        Ok(())
-    }
-
-    /// Run parallel optimization with a closure.
+    /// Run parallel optimization with an objective.
     ///
     /// Spawns up to `concurrency` evaluations concurrently using
     /// [`spawn_blocking`](tokio::task::spawn_blocking). Results are
     /// collected via a [`JoinSet`](tokio::task::JoinSet).
     ///
-    /// For lifecycle hooks, use
-    /// [`optimize_with_parallel`](Self::optimize_with_parallel).
+    /// Accepts any [`Objective`](crate::Objective) implementation, including
+    /// plain closures. The [`after_trial`](crate::Objective::after_trial)
+    /// hook fires as each result arrives — returning `Break` stops spawning
+    /// new trials while in-flight tasks drain.
     ///
     /// # Errors
     ///
@@ -1325,131 +1133,8 @@ where
     /// # }
     /// ```
     #[cfg(feature = "async")]
-    #[allow(clippy::missing_panics_doc)]
-    pub async fn optimize_parallel<F, E>(
-        &self,
-        n_trials: usize,
-        concurrency: usize,
-        objective: F,
-    ) -> crate::Result<()>
-    where
-        F: Fn(&mut Trial) -> Result<V, E> + Send + Sync + 'static,
-        E: ToString + Send + 'static,
-        V: Clone + Default + Send + 'static,
-    {
-        use tokio::sync::Semaphore;
-        use tokio::task::JoinSet;
-
-        #[cfg(feature = "tracing")]
-        let _span = tracing::info_span!("optimize_parallel", n_trials, concurrency, direction = ?self.direction).entered();
-
-        let objective = Arc::new(objective);
-        let semaphore = Arc::new(Semaphore::new(concurrency));
-        let mut join_set: JoinSet<(Trial, Result<V, E>)> = JoinSet::new();
-        let mut spawned = 0;
-
-        while spawned < n_trials {
-            // If the join set is full, drain one result to free a slot.
-            while join_set.len() >= concurrency {
-                let result = join_set
-                    .join_next()
-                    .await
-                    .expect("join_set should not be empty")
-                    .map_err(|e| crate::Error::TaskError(e.to_string()))?;
-                match result {
-                    (t, Ok(value)) => {
-                        #[cfg(feature = "tracing")]
-                        let trial_id = t.id();
-                        self.complete_trial(t, value);
-                        trace_info!(trial_id, "trial completed");
-                    }
-                    (t, Err(e)) => {
-                        #[cfg(feature = "tracing")]
-                        let trial_id = t.id();
-                        if is_trial_pruned(&e) {
-                            self.prune_trial(t);
-                            trace_info!(trial_id, "trial pruned");
-                        } else {
-                            self.fail_trial(t, e.to_string());
-                            trace_debug!(trial_id, "trial failed");
-                        }
-                    }
-                }
-            }
-
-            let permit = semaphore
-                .clone()
-                .acquire_owned()
-                .await
-                .map_err(|e| crate::Error::TaskError(e.to_string()))?;
-
-            let mut trial = self.create_trial();
-            let obj = Arc::clone(&objective);
-            join_set.spawn(async move {
-                let result = tokio::task::spawn_blocking(move || {
-                    let res = obj(&mut trial);
-                    (trial, res)
-                })
-                .await
-                .expect("spawn_blocking should not panic");
-                drop(permit);
-                result
-            });
-            spawned += 1;
-        }
-
-        // Drain remaining in-flight tasks.
-        while let Some(result) = join_set.join_next().await {
-            let result = result.map_err(|e| crate::Error::TaskError(e.to_string()))?;
-            match result {
-                (t, Ok(value)) => {
-                    #[cfg(feature = "tracing")]
-                    let trial_id = t.id();
-                    self.complete_trial(t, value);
-                    trace_info!(trial_id, "trial completed");
-                }
-                (t, Err(e)) => {
-                    #[cfg(feature = "tracing")]
-                    let trial_id = t.id();
-                    if is_trial_pruned(&e) {
-                        self.prune_trial(t);
-                        trace_info!(trial_id, "trial pruned");
-                    } else {
-                        self.fail_trial(t, e.to_string());
-                        trace_debug!(trial_id, "trial failed");
-                    }
-                }
-            }
-        }
-
-        let has_complete = self
-            .storage
-            .trials_arc()
-            .read()
-            .iter()
-            .any(|t| t.state == TrialState::Complete);
-        if !has_complete {
-            return Err(crate::Error::NoCompletedTrials);
-        }
-
-        Ok(())
-    }
-
-    /// Run parallel optimization with an [`Objective`](crate::Objective) implementation.
-    ///
-    /// Like [`optimize_parallel`](Self::optimize_parallel), but accepts a struct
-    /// implementing [`Objective`](crate::Objective) for lifecycle hooks and
-    /// automatic retries. The [`after_trial`](crate::Objective::after_trial)
-    /// hook fires as each result arrives — returning `Break` stops spawning
-    /// new trials while in-flight tasks drain.
-    ///
-    /// # Errors
-    ///
-    /// Returns `Error::NoCompletedTrials` if no trials completed successfully.
-    /// Returns `Error::TaskError` if the semaphore is closed or a spawned task panics.
-    #[cfg(feature = "async")]
     #[allow(clippy::missing_panics_doc, clippy::too_many_lines)]
-    pub async fn optimize_with_parallel<O>(
+    pub async fn optimize_parallel<O>(
         &self,
         n_trials: usize,
         concurrency: usize,
@@ -1464,7 +1149,7 @@ where
         use tokio::task::JoinSet;
 
         #[cfg(feature = "tracing")]
-        let _span = tracing::info_span!("optimize_with_parallel", n_trials, concurrency, direction = ?self.direction).entered();
+        let _span = tracing::info_span!("optimize_parallel", n_trials, concurrency, direction = ?self.direction).entered();
 
         let objective = Arc::new(objective);
         let semaphore = Arc::new(Semaphore::new(concurrency));
@@ -1838,7 +1523,7 @@ where
     /// let x = FloatParam::new(0.0, 10.0).name("x");
     ///
     /// study
-    ///     .optimize(20, |trial| {
+    ///     .optimize(20, |trial: &mut optimizer::Trial| {
     ///         let xv = x.suggest(trial)?;
     ///         Ok::<_, optimizer::Error>(xv * xv)
     ///     })
@@ -1941,7 +1626,7 @@ where
     /// let y = FloatParam::new(0.0, 10.0).name("y");
     ///
     /// study
-    ///     .optimize(30, |trial| {
+    ///     .optimize(30, |trial: &mut optimizer::Trial| {
     ///         let xv = x.suggest(trial)?;
     ///         let yv = y.suggest(trial)?;
     ///         Ok::<_, optimizer::Error>(xv * xv + 0.1 * yv)

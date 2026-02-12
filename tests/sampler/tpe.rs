@@ -18,7 +18,7 @@ fn test_tpe_optimizes_quadratic_function() {
     let x_param = FloatParam::new(-10.0, 10.0);
 
     study
-        .optimize(100, |trial| {
+        .optimize(100, |trial: &mut optimizer::Trial| {
             let x = x_param.suggest(trial)?;
             Ok::<_, Error>((x - 3.0).powi(2))
         })
@@ -51,7 +51,7 @@ fn test_tpe_optimizes_multivariate_function() {
     let y_param = FloatParam::new(-5.0, 5.0);
 
     study
-        .optimize(100, |trial| {
+        .optimize(100, |trial: &mut optimizer::Trial| {
             let x = x_param.suggest(trial)?;
             let y = y_param.suggest(trial)?;
             Ok::<_, Error>(x * x + y * y)
@@ -83,7 +83,7 @@ fn test_tpe_maximization() {
     let x_param = FloatParam::new(-10.0, 10.0);
 
     study
-        .optimize(50, |trial| {
+        .optimize(50, |trial: &mut optimizer::Trial| {
             let x = x_param.suggest(trial)?;
             Ok::<_, Error>(-(x - 2.0).powi(2) + 10.0)
         })
@@ -113,7 +113,7 @@ fn test_tpe_with_categorical_parameter() {
 
     // Optimization where the best choice depends on the categorical
     study
-        .optimize(30, |trial| {
+        .optimize(30, |trial: &mut optimizer::Trial| {
             let choice = model_param.suggest(trial)?;
             let x = x_param.suggest(trial)?;
 
@@ -150,7 +150,7 @@ fn test_tpe_with_integer_parameters() {
 
     // Minimize (n - 7)^2 where n in [1, 10]
     study
-        .optimize(30, |trial| {
+        .optimize(30, |trial: &mut optimizer::Trial| {
             let n = n_param.suggest(trial)?;
             Ok::<_, Error>(((n - 7) as f64).powi(2))
         })
@@ -177,7 +177,7 @@ fn test_tpe_with_log_scale_int() {
     let batch_param = IntParam::new(1, 1024).log_scale();
 
     study
-        .optimize(20, |trial| {
+        .optimize(20, |trial: &mut optimizer::Trial| {
             let batch_size = batch_param.suggest(trial)?;
             Ok::<_, Error>(((batch_size as f64).log2() - 5.0).powi(2))
         })
@@ -200,7 +200,7 @@ fn test_tpe_with_step_distributions() {
     let n_param = IntParam::new(0, 100).step(10);
 
     study
-        .optimize(20, |trial| {
+        .optimize(20, |trial: &mut optimizer::Trial| {
             let x = x_param.suggest(trial)?;
             let n = n_param.suggest(trial)?;
             Ok::<_, Error>((x - 5.0).powi(2) + ((n - 50) as f64).powi(2))
@@ -224,7 +224,7 @@ fn test_tpe_with_fixed_kde_bandwidth() {
     let x_param = FloatParam::new(-5.0, 5.0);
 
     study
-        .optimize(20, |trial| {
+        .optimize(20, |trial: &mut optimizer::Trial| {
             let x = x_param.suggest(trial)?;
             Ok::<_, Error>(x * x)
         })
@@ -252,7 +252,7 @@ fn test_tpe_split_trials_with_two_trials() {
     let x_param = FloatParam::new(0.0, 10.0);
 
     study
-        .optimize(5, |trial| {
+        .optimize(5, |trial: &mut optimizer::Trial| {
             let x = x_param.suggest(trial)?;
             Ok::<_, Error>(x)
         })
@@ -276,7 +276,7 @@ fn test_tpe_empty_good_or_bad_values_fallback() {
 
     // First optimize with one parameter
     study
-        .optimize(10, |trial| {
+        .optimize(10, |trial: &mut optimizer::Trial| {
             let x = x_param.suggest(trial)?;
             Ok::<_, Error>(x)
         })
@@ -284,7 +284,7 @@ fn test_tpe_empty_good_or_bad_values_fallback() {
 
     // Now try with a different parameter - TPE won't have history for "y"
     study
-        .optimize(5, |trial| {
+        .optimize(5, |trial: &mut optimizer::Trial| {
             let y = y_param.suggest(trial)?;
             Ok::<_, Error>(y)
         })
@@ -304,7 +304,7 @@ fn test_tpe_sampler_builder_default_trait() {
     let x_param = FloatParam::new(0.0, 1.0);
 
     study
-        .optimize(5, |trial| {
+        .optimize(5, |trial: &mut optimizer::Trial| {
             let x = x_param.suggest(trial)?;
             Ok::<_, Error>(x)
         })
@@ -321,7 +321,7 @@ fn test_tpe_sampler_default_trait() {
     let x_param = FloatParam::new(0.0, 1.0);
 
     study
-        .optimize(5, |trial| {
+        .optimize(5, |trial: &mut optimizer::Trial| {
             let x = x_param.suggest(trial)?;
             Ok::<_, Error>(x)
         })
@@ -343,7 +343,7 @@ fn test_suggest_bool_with_tpe() {
     let x_param = FloatParam::new(0.0, 10.0);
 
     study
-        .optimize(20, |trial| {
+        .optimize(20, |trial: &mut optimizer::Trial| {
             let use_large = use_large_param.suggest(trial)?;
             let x = x_param.suggest(trial)?;
             // The value depends on use_large flag
@@ -369,7 +369,7 @@ fn test_params_with_tpe() {
     let n_param = IntParam::new(1, 10);
 
     study
-        .optimize(30, |trial| {
+        .optimize(30, |trial: &mut optimizer::Trial| {
             let x = x_param.suggest(trial)?;
             let n = n_param.suggest(trial)?;
             Ok::<_, Error>(x * x + (n as f64 - 5.0).powi(2))

@@ -48,7 +48,7 @@
 //!
 //! let x = FloatParam::new(0.0, 1.0);
 //! study
-//!     .optimize(30, |trial| {
+//!     .optimize(30, |trial: &mut optimizer::Trial| {
 //!         let xv = x.suggest(trial)?;
 //!         Ok::<_, optimizer::Error>(vec![xv, 1.0 - xv])
 //!     })
@@ -103,7 +103,7 @@ use crate::{pareto, rng_util};
 ///
 /// let x = FloatParam::new(0.0, 1.0);
 /// study
-///     .optimize(30, |trial| {
+///     .optimize(30, |trial: &mut optimizer::Trial| {
 ///         let xv = x.suggest(trial)?;
 ///         Ok::<_, optimizer::Error>(vec![xv, 1.0 - xv])
 ///     })
@@ -660,6 +660,7 @@ mod tests {
     use super::*;
     use crate::distribution::{CategoricalDistribution, FloatDistribution, IntDistribution};
     use crate::parameter::ParamId;
+    use crate::trial::Trial;
 
     fn create_mo_trial(
         id: u64,
@@ -930,7 +931,7 @@ mod tests {
 
         let x = FloatParam::new(0.0, 1.0);
         study
-            .optimize(30, |trial| {
+            .optimize(30, |trial: &mut Trial| {
                 let xv = x.suggest(trial)?;
                 Ok::<_, crate::Error>(vec![xv, 1.0 - xv])
             })

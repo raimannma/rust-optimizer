@@ -20,7 +20,7 @@ fn run_study(study: Study<f64>, n_trials: usize) -> f64 {
     let y = FloatParam::new(-3.0, 3.0).name("y");
 
     study
-        .optimize(n_trials, |trial| {
+        .optimize(n_trials, |trial: &mut optimizer::Trial| {
             let x_val = x.suggest(trial)?;
             let y_val = y.suggest(trial)?;
             Ok::<_, Error>(sphere(x_val, y_val))

@@ -44,7 +44,7 @@ fn main() -> optimizer::Result<()> {
         target: 0.01,
     };
 
-    study.optimize_with(100, objective)?;
+    study.optimize(100, objective)?;
 
     let best = study.best_trial()?;
     println!(

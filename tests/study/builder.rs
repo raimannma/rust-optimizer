@@ -33,7 +33,7 @@ fn test_builder_with_sampler() {
     let study: Study<f64> = Study::builder().sampler(TpeSampler::new()).build();
 
     study
-        .optimize(10, |trial| {
+        .optimize(10, |trial: &mut optimizer::Trial| {
             let val = x.suggest(trial)?;
             Ok::<_, Error>(val * val)
         })
@@ -77,7 +77,7 @@ fn test_builder_optimizes_correctly() {
         .build();
 
     study
-        .optimize(100, |trial| {
+        .optimize(100, |trial: &mut optimizer::Trial| {
             let val = x.suggest(trial)?;
             Ok::<_, Error>((val - 3.0) * (val - 3.0))
         })

@@ -1,6 +1,9 @@
 //! The [`Objective`] trait defines what gets optimized.
 //!
-//! For simple closures, pass them directly to
+//! # Closures work directly
+//!
+//! Any `Fn(&mut Trial) -> Result<V, E>` closure automatically implements
+//! [`Objective`], so you can pass closures straight to
 //! [`Study::optimize`](crate::Study::optimize):
 //!
 //! ```
@@ -10,16 +13,18 @@
 //! let x = FloatParam::new(-10.0, 10.0).name("x");
 //!
 //! study
-//!     .optimize(50, |trial| {
+//!     .optimize(50, |trial: &mut optimizer::Trial| {
 //!         let v = x.suggest(trial)?;
 //!         Ok::<_, Error>((v - 3.0).powi(2))
 //!     })
 //!     .unwrap();
 //! ```
 //!
-//! For richer control — early stopping, retries, or per-trial logging —
-//! implement [`Objective`] on a struct and pass it to
-//! [`Study::optimize_with`](crate::Study::optimize_with):
+//! # Structs for lifecycle hooks
+//!
+//! For richer control — early stopping or per-trial logging — implement
+//! [`Objective`] on a struct and pass it to the same
+//! [`Study::optimize`](crate::Study::optimize) method:
 //!
 //! ```
 //! use std::ops::ControlFlow;
@@ -54,7 +59,7 @@
 //!     x: FloatParam::new(-10.0, 10.0).name("x"),
 //!     target: 1.0,
 //! };
-//! study.optimize_with(200, obj).unwrap();
+//! study.optimize(200, obj).unwrap();
 //! assert!(study.best_value().unwrap() < 1.0);
 //! ```
 
@@ -69,15 +74,13 @@ use crate::trial::Trial;
 /// The only required method is [`evaluate`](Objective::evaluate), which
 /// computes the objective value for a given trial. Optional hooks provide
 /// early stopping ([`before_trial`](Objective::before_trial),
-/// [`after_trial`](Objective::after_trial)) and automatic retries
-/// ([`max_retries`](Objective::max_retries)).
+/// [`after_trial`](Objective::after_trial)).
 ///
-/// # When to use `Objective` vs a closure
+/// # Closures implement `Objective` automatically
 ///
-/// - **Closure** — pass directly to [`Study::optimize`](crate::Study::optimize)
-///   for simple evaluate-only objectives.
-/// - **`Objective` struct** — implement this trait when you need hooks
-///   (`before_trial`, `after_trial`) or retries.
+/// A blanket implementation covers all `Fn(&mut Trial) -> Result<V, E>`
+/// closures, so you can pass closures directly to
+/// [`Study::optimize`](crate::Study::optimize) without wrapping them.
 ///
 /// # Thread safety
 ///
@@ -120,13 +123,19 @@ pub trait Objective<V: PartialOrd = f64> {
     fn after_trial(&self, _study: &Study<V>, _trial: &CompletedTrial<V>) -> ControlFlow<()> {
         ControlFlow::Continue(())
     }
+}
 
-    /// Maximum number of retries for a failed trial.
-    ///
-    /// When `evaluate` returns a non-pruning error and retries remain,
-    /// the same parameter configuration is re-evaluated. Set to `0`
-    /// (the default) to disable retries.
-    fn max_retries(&self) -> usize {
-        0
+/// Blanket implementation: any `Fn(&mut Trial) -> Result<V, E>` is an
+/// `Objective` with no lifecycle hooks.
+impl<F, V, E> Objective<V> for F
+where
+    F: Fn(&mut Trial) -> Result<V, E>,
+    V: PartialOrd,
+    E: ToString + 'static,
+{
+    type Error = E;
+
+    fn evaluate(&self, trial: &mut Trial) -> Result<V, E> {
+        self(trial)
     }
 }

@@ -119,7 +119,7 @@ fn study_with_journal_integration() {
         let study =
             Study::with_journal(Direction::Minimize, RandomSampler::with_seed(1), &path).unwrap();
         study
-            .optimize(5, |trial| {
+            .optimize(5, |trial: &mut optimizer::Trial| {
                 let val = x.suggest(trial)?;
                 Ok::<_, optimizer::Error>(val * val)
             })
@@ -134,7 +134,7 @@ fn study_with_journal_integration() {
 
     // Continue optimizing
     study2
-        .optimize(5, |trial| {
+        .optimize(5, |trial: &mut optimizer::Trial| {
             let val = x.suggest(trial)?;
             Ok::<_, optimizer::Error>(val * val)
         })
@@ -158,7 +158,7 @@ fn ids_are_unique_after_reload() {
         let study =
             Study::with_journal(Direction::Minimize, RandomSampler::with_seed(1), &path).unwrap();
         study
-            .optimize(3, |trial| {
+            .optimize(3, |trial: &mut optimizer::Trial| {
                 let _ = FloatParam::new(0.0, 1.0).suggest(trial)?;
                 Ok::<_, optimizer::Error>(1.0)
             })
@@ -169,7 +169,7 @@ fn ids_are_unique_after_reload() {
     let study =
         Study::with_journal(Direction::Minimize, RandomSampler::with_seed(2), &path).unwrap();
     study
-        .optimize(3, |trial| {
+        .optimize(3, |trial: &mut optimizer::Trial| {
             let _ = FloatParam::new(0.0, 1.0).suggest(trial)?;
             Ok::<_, optimizer::Error>(1.0)
         })
@@ -194,7 +194,7 @@ fn pruned_trials_are_stored() {
     // Complete one, prune one
     let x = FloatParam::new(0.0, 1.0);
     study
-        .optimize(3, |trial| {
+        .optimize(3, |trial: &mut optimizer::Trial| {
             let _ = x.suggest(trial)?;
             if trial.id() == 1 {
                 Err(optimizer::TrialPruned)?;

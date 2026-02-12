@@ -23,7 +23,7 @@ fn bench_tpe_sphere(c: &mut Criterion) {
             b.iter(|| {
                 let study = Study::minimize(TpeSampler::builder().seed(42).build().unwrap());
                 study
-                    .optimize(100, |trial| {
+                    .optimize(100, |trial: &mut optimizer::Trial| {
                         let x: Vec<f64> = params
                             .iter()
                             .map(|p| p.suggest(trial))
@@ -48,7 +48,7 @@ fn bench_tpe_rosenbrock(c: &mut Criterion) {
             b.iter(|| {
                 let study = Study::minimize(TpeSampler::builder().seed(42).build().unwrap());
                 study
-                    .optimize(100, |trial| {
+                    .optimize(100, |trial: &mut optimizer::Trial| {
                         let x: Vec<f64> = params
                             .iter()
                             .map(|p| p.suggest(trial))
@@ -72,7 +72,7 @@ fn bench_random_vs_tpe(c: &mut Criterion) {
         b.iter(|| {
             let study = Study::minimize(RandomSampler::with_seed(42));
             study
-                .optimize(100, |trial| {
+                .optimize(100, |trial: &mut optimizer::Trial| {
                     let x: Vec<f64> = params
                         .iter()
                         .map(|p| p.suggest(trial))
@@ -88,7 +88,7 @@ fn bench_random_vs_tpe(c: &mut Criterion) {
         b.iter(|| {
             let study = Study::minimize(TpeSampler::builder().seed(42).build().unwrap());
             study
-                .optimize(100, |trial| {
+                .optimize(100, |trial: &mut optimizer::Trial| {
                     let x: Vec<f64> = params
                         .iter()
                         .map(|p| p.suggest(trial))

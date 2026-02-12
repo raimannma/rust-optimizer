@@ -9,7 +9,7 @@ fn html_report_creates_file() {
     let y = IntParam::new(1, 5).name("y");
 
     study
-        .optimize(10, |trial| {
+        .optimize(10, |trial: &mut optimizer::Trial| {
             let xv = x.suggest(trial)?;
             let yv = y.suggest(trial)?;
             Ok::<_, optimizer::Error>(xv + yv as f64)
@@ -32,7 +32,7 @@ fn html_report_contains_all_chart_sections() {
     let y = FloatParam::new(-5.0, 5.0).name("y");
 
     study
-        .optimize(20, |trial| {
+        .optimize(20, |trial: &mut optimizer::Trial| {
             let xv = x.suggest(trial)?;
             let yv = y.suggest(trial)?;
             Ok::<_, optimizer::Error>(xv * xv + yv * yv)
@@ -85,7 +85,7 @@ fn html_report_single_param_no_parcoords() {
     let x = FloatParam::new(0.0, 10.0).name("x");
 
     study
-        .optimize(5, |trial| {
+        .optimize(5, |trial: &mut optimizer::Trial| {
             let xv = x.suggest(trial)?;
             Ok::<_, optimizer::Error>(xv * xv)
         })
@@ -109,7 +109,7 @@ fn html_report_maximize_direction() {
     let x = FloatParam::new(0.0, 10.0).name("x");
 
     study
-        .optimize(5, |trial| {
+        .optimize(5, |trial: &mut optimizer::Trial| {
             let xv = x.suggest(trial)?;
             Ok::<_, optimizer::Error>(xv)
         })
@@ -130,7 +130,7 @@ fn export_html_convenience_method() {
     let x = FloatParam::new(0.0, 10.0).name("x");
 
     study
-        .optimize(5, |trial| {
+        .optimize(5, |trial: &mut optimizer::Trial| {
             let xv = x.suggest(trial)?;
             Ok::<_, optimizer::Error>(xv * xv)
         })
@@ -156,7 +156,7 @@ fn html_report_with_intermediate_values() {
     let x = FloatParam::new(0.0, 10.0).name("x");
 
     study
-        .optimize(10, |trial| {
+        .optimize(10, |trial: &mut optimizer::Trial| {
             let xv = x.suggest(trial)?;
             for step in 0..5 {
                 let val = xv * xv + step as f64;

@@ -15,7 +15,7 @@ fn main() -> optimizer::Result<()> {
 
     // Classic bi-objective: f1(x) = x², f2(x) = (x-1)²
     // The Pareto front is the curve where improving f1 worsens f2.
-    study.optimize(50, |trial| {
+    study.optimize(50, |trial: &mut optimizer::Trial| {
         let xv = x.suggest(trial)?;
         let f1 = xv * xv;
         let f2 = (xv - 1.0) * (xv - 1.0);

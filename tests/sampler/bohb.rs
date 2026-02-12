@@ -27,7 +27,7 @@ fn bohb_converges_on_quadratic() {
     let x_param = FloatParam::new(-10.0, 10.0);
 
     study
-        .optimize(60, |trial| {
+        .optimize(60, |trial: &mut optimizer::Trial| {
             let x = x_param.suggest(trial)?;
 
             // Report intermediate values at budget steps 1, 3, 9
@@ -66,7 +66,7 @@ fn bohb_with_pruning() {
     let x_param = FloatParam::new(-5.0, 5.0);
 
     study
-        .optimize(40, |trial| {
+        .optimize(40, |trial: &mut optimizer::Trial| {
             let x = x_param.suggest(trial)?;
             let obj = x * x;
 
@@ -112,7 +112,7 @@ fn bohb_uses_budget_conditioned_history() {
     let x_param = FloatParam::new(0.0, 10.0);
 
     study
-        .optimize(30, |trial| {
+        .optimize(30, |trial: &mut optimizer::Trial| {
             let x = x_param.suggest(trial)?;
             // Intermediate values that guide optimization toward x=2
             trial.report(1, (x - 2.0).powi(2) + 1.0);
