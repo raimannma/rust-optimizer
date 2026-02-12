@@ -1517,12 +1517,12 @@ where
         // Collect all parameter IDs across trials.
         let all_param_ids: BTreeSet<_> = complete.iter().flat_map(|t| t.params.keys()).collect();
 
-        let mut scores: Vec<(String, f64)> = Vec::new();
+        let mut scores: Vec<(String, f64)> = Vec::with_capacity(all_param_ids.len());
 
         for &param_id in &all_param_ids {
             // Collect (param_value_f64, objective_f64) for trials that have this param.
-            let mut param_vals = Vec::new();
-            let mut obj_vals = Vec::new();
+            let mut param_vals = Vec::with_capacity(complete.len());
+            let mut obj_vals = Vec::with_capacity(complete.len());
 
             for trial in &complete {
                 if let Some(pv) = trial.params.get(param_id) {
@@ -1645,8 +1645,8 @@ where
         }
 
         // Build feature matrix (only trials that have all parameters).
-        let mut data = Vec::new();
-        let mut targets = Vec::new();
+        let mut data = Vec::with_capacity(complete.len());
+        let mut targets = Vec::with_capacity(complete.len());
 
         for trial in &complete {
             let mut row = Vec::with_capacity(all_param_ids.len());
