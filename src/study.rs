@@ -491,20 +491,8 @@ where
     ///
     /// assert_eq!(study.n_trials(), 1);
     /// ```
-    pub fn complete_trial(&self, mut trial: Trial, value: V) {
-        trial.set_complete();
-        let mut completed = CompletedTrial::with_intermediate_values(
-            trial.id(),
-            trial.params().clone(),
-            trial.distributions().clone(),
-            trial.param_labels().clone(),
-            value,
-            trial.intermediate_values().to_vec(),
-            trial.user_attrs().clone(),
-        );
-        completed.state = TrialState::Complete;
-        completed.constraints = trial.constraint_values().to_vec();
-
+    pub fn complete_trial(&self, trial: Trial, value: V) {
+        let completed = trial.into_completed(value, TrialState::Complete);
         self.storage.push(completed);
     }
 
@@ -604,23 +592,11 @@ where
     /// # Arguments
     ///
     /// * `trial` - The trial that was pruned.
-    pub fn prune_trial(&self, mut trial: Trial)
+    pub fn prune_trial(&self, trial: Trial)
     where
         V: Default,
     {
-        trial.set_pruned();
-        let mut completed = CompletedTrial::with_intermediate_values(
-            trial.id(),
-            trial.params().clone(),
-            trial.distributions().clone(),
-            trial.param_labels().clone(),
-            V::default(),
-            trial.intermediate_values().to_vec(),
-            trial.user_attrs().clone(),
-        );
-        completed.state = TrialState::Pruned;
-        completed.constraints = trial.constraint_values().to_vec();
-
+        let completed = trial.into_completed(V::default(), TrialState::Pruned);
         self.storage.push(completed);
     }
 
@@ -852,15 +828,17 @@ where
     {
         let trials = self.storage.trials_arc().read();
         let direction = self.direction;
-        let mut completed: Vec<_> = trials
+        // Sort indices instead of cloning all trials, then clone only the top N.
+        let mut indices: Vec<usize> = trials
             .iter()
-            .filter(|t| t.state == TrialState::Complete)
-            .cloned()
+            .enumerate()
+            .filter(|(_, t)| t.state == TrialState::Complete)
+            .map(|(i, _)| i)
             .collect();
         // Sort best-first: reverse the compare_trials ordering (which is designed for max_by)
-        completed.sort_by(|a, b| Self::compare_trials(b, a, direction));
-        completed.truncate(n);
-        completed
+        indices.sort_by(|&a, &b| Self::compare_trials(&trials[b], &trials[a], direction));
+        indices.truncate(n);
+        indices.iter().map(|&i| trials[i].clone()).collect()
     }
 
     /// Run optimization with an objective.
@@ -921,7 +899,12 @@ where
                 Ok(value) => {
                     #[cfg(feature = "tracing")]
                     let trial_id = trial.id();
-                    self.complete_trial(trial, value);
+
+                    let completed = trial.into_completed(value, TrialState::Complete);
+
+                    // Fire after_trial hook before pushing to storage
+                    let flow = objective.after_trial(self, &completed);
+                    self.storage.push(completed);
 
                     #[cfg(feature = "tracing")]
                     {
@@ -938,17 +921,8 @@ where
                         }
                     }
 
-                    // Fire after_trial hook
-                    let trials = self.storage.trials_arc().read();
-                    if let Some(completed) = trials.last() {
-                        let completed_clone = completed.clone();
-                        drop(trials);
-                        if let ControlFlow::Break(()) =
-                            objective.after_trial(self, &completed_clone)
-                        {
-                            // Return early — at least one trial completed.
-                            return Ok(());
-                        }
+                    if let ControlFlow::Break(()) = flow {
+                        return Ok(());
                     }
                 }
                 Err(e) if is_trial_pruned(&e) => {
@@ -1049,19 +1023,14 @@ where
                 (t, Ok(value)) => {
                     #[cfg(feature = "tracing")]
                     let trial_id = t.id();
-                    self.complete_trial(t, value);
+
+                    let completed = t.into_completed(value, TrialState::Complete);
+                    let flow = objective.after_trial(self, &completed);
+                    self.storage.push(completed);
                     trace_info!(trial_id, "trial completed");
 
-                    // Fire after_trial hook
-                    let trials = self.storage.trials_arc().read();
-                    if let Some(completed) = trials.last() {
-                        let completed_clone = completed.clone();
-                        drop(trials);
-                        if let ControlFlow::Break(()) =
-                            objective.after_trial(self, &completed_clone)
-                        {
-                            return Ok(());
-                        }
+                    if let ControlFlow::Break(()) = flow {
+                        return Ok(());
                     }
                 }
                 (t, Err(e)) if is_trial_pruned(&e) => {
@@ -1172,18 +1141,14 @@ where
                     (t, Ok(value)) => {
                         #[cfg(feature = "tracing")]
                         let trial_id = t.id();
-                        self.complete_trial(t, value);
+
+                        let completed = t.into_completed(value, TrialState::Complete);
+                        let flow = objective.after_trial(self, &completed);
+                        self.storage.push(completed);
                         trace_info!(trial_id, "trial completed");
 
-                        let trials = self.storage.trials_arc().read();
-                        if let Some(completed) = trials.last() {
-                            let completed_clone = completed.clone();
-                            drop(trials);
-                            if let ControlFlow::Break(()) =
-                                objective.after_trial(self, &completed_clone)
-                            {
-                                break 'spawn;
-                            }
+                        if let ControlFlow::Break(()) = flow {
+                            break 'spawn;
                         }
                     }
                     (t, Err(e)) => {
@@ -1228,15 +1193,12 @@ where
                 (t, Ok(value)) => {
                     #[cfg(feature = "tracing")]
                     let trial_id = t.id();
-                    self.complete_trial(t, value);
-                    trace_info!(trial_id, "trial completed");
+
+                    let completed = t.into_completed(value, TrialState::Complete);
                     // Still fire after_trial for bookkeeping, but don't break — we're draining.
-                    let trials = self.storage.trials_arc().read();
-                    if let Some(completed) = trials.last() {
-                        let completed_clone = completed.clone();
-                        drop(trials);
-                        let _ = objective.after_trial(self, &completed_clone);
-                    }
+                    let _ = objective.after_trial(self, &completed);
+                    self.storage.push(completed);
+                    trace_info!(trial_id, "trial completed");
                 }
                 (t, Err(e)) => {
                     #[cfg(feature = "tracing")]

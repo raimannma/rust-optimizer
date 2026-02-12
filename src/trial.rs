@@ -26,6 +26,7 @@ use parking_lot::RwLock;
 
 use crate::distribution::Distribution;
 use crate::error::{Error, Result};
+use crate::multi_objective::MultiObjectiveTrial;
 use crate::param::ParamValue;
 use crate::parameter::{ParamId, Parameter};
 use crate::pruner::Pruner;
@@ -389,19 +390,9 @@ impl Trial {
         &self.constraint_values
     }
 
-    /// Set the trial state to `Complete`.
-    pub(crate) fn set_complete(&mut self) {
-        self.state = TrialState::Complete;
-    }
-
     /// Set the trial state to `Failed`.
     pub(crate) fn set_failed(&mut self) {
         self.state = TrialState::Failed;
-    }
-
-    /// Set the trial state to `Pruned`.
-    pub(crate) fn set_pruned(&mut self) {
-        self.state = TrialState::Pruned;
     }
 
     /// Suggest a parameter value using a [`Parameter`] definition.
@@ -481,6 +472,42 @@ impl Trial {
         self.param_labels.insert(param_id, param.label());
 
         Ok(result)
+    }
+
+    /// Consume this trial and move its fields into a [`CompletedTrial`].
+    ///
+    /// This avoids cloning the trial's `HashMap`s and `Vec`s by moving
+    /// ownership directly into the completed trial.
+    pub(crate) fn into_completed<V>(self, value: V, state: TrialState) -> CompletedTrial<V> {
+        CompletedTrial {
+            id: self.id,
+            params: self.params,
+            distributions: self.distributions,
+            param_labels: self.param_labels,
+            value,
+            intermediate_values: self.intermediate_values,
+            state,
+            user_attrs: self.user_attrs,
+            constraints: self.constraint_values,
+        }
+    }
+
+    /// Consume this trial and move its fields into a [`MultiObjectiveTrial`].
+    pub(crate) fn into_multi_objective_trial(
+        self,
+        values: Vec<f64>,
+        state: TrialState,
+    ) -> MultiObjectiveTrial {
+        MultiObjectiveTrial {
+            id: self.id,
+            params: self.params,
+            distributions: self.distributions,
+            param_labels: self.param_labels,
+            values,
+            state,
+            user_attrs: self.user_attrs,
+            constraints: self.constraint_values,
+        }
     }
 }
 

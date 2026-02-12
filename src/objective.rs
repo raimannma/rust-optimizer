@@ -117,6 +117,11 @@ pub trait Objective<V: PartialOrd = f64> {
 
     /// Called after each **completed** trial (not failed or pruned).
     ///
+    /// The trial is passed directly as the argument *before* it is pushed
+    /// to storage, so `study.n_trials()` and `study.trials()` do not yet
+    /// include this trial. The trial is always pushed to storage after this
+    /// callback returns, regardless of the return value.
+    ///
     /// Return `ControlFlow::Break(())` to stop the optimization loop.
     ///
     /// Default: always continues.

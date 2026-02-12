@@ -20,7 +20,9 @@ fn test_callback_early_stopping() {
             Ok(x)
         }
         fn after_trial(&self, study: &Study<f64>, _trial: &CompletedTrial<f64>) -> ControlFlow<()> {
-            if study.n_trials() >= 5 {
+            // The current trial has not yet been pushed to storage when
+            // after_trial fires, so n_trials() == 4 means this is the 5th.
+            if study.n_trials() >= 4 {
                 ControlFlow::Break(())
             } else {
                 ControlFlow::Continue(())
@@ -98,7 +100,9 @@ fn test_callback_sampler_early_stopping() {
             Ok(x)
         }
         fn after_trial(&self, study: &Study<f64>, _trial: &CompletedTrial<f64>) -> ControlFlow<()> {
-            if study.n_trials() >= 3 {
+            // The current trial has not yet been pushed to storage when
+            // after_trial fires, so n_trials() == 2 means this is the 3rd.
+            if study.n_trials() >= 2 {
                 ControlFlow::Break(())
             } else {
                 ControlFlow::Continue(())

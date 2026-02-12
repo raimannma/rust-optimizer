@@ -321,18 +321,8 @@ impl MultiObjectiveStudy {
     }
 
     /// Records a completed trial.
-    fn complete_trial(&self, mut trial: Trial, values: Vec<f64>) {
-        trial.set_complete();
-        let mo_trial = MultiObjectiveTrial {
-            id: trial.id(),
-            params: trial.params().clone(),
-            distributions: trial.distributions().clone(),
-            param_labels: trial.param_labels().clone(),
-            values,
-            state: TrialState::Complete,
-            user_attrs: trial.user_attrs().clone(),
-            constraints: trial.constraint_values().to_vec(),
-        };
+    fn complete_trial(&self, trial: Trial, values: Vec<f64>) {
+        let mo_trial = trial.into_multi_objective_trial(values, TrialState::Complete);
         self.completed_trials.write().push(mo_trial);
     }
 
