@@ -30,7 +30,6 @@ use crate::error::{Error, Result};
 /// // Get dimensionality
 /// assert_eq!(kde.n_dims(), 2);
 /// ```
-#[allow(dead_code)] // Fields and methods will be used in subsequent stories (US-003, US-004)
 #[derive(Clone, Debug)]
 pub(crate) struct MultivariateKDE {
     /// The sample points used to construct the KDE.
@@ -43,7 +42,6 @@ pub(crate) struct MultivariateKDE {
     n_dims: usize,
 }
 
-#[allow(dead_code)] // Methods will be used in subsequent stories (US-003, US-004)
 impl MultivariateKDE {
     /// Creates a new multivariate KDE with automatic bandwidth selection using Scott's rule.
     ///
@@ -100,6 +98,7 @@ impl MultivariateKDE {
     /// Returns `Error::ZeroDimensions` if samples have zero dimensions.
     /// Returns `Error::BandwidthDimensionMismatch` if bandwidths length doesn't match dimensions.
     /// Returns `Error::InvalidBandwidth` if any bandwidth is not positive.
+    #[cfg(test)]
     pub(crate) fn with_bandwidths(samples: Vec<Vec<f64>>, bandwidths: Vec<f64>) -> Result<Self> {
         if samples.is_empty() {
             return Err(Error::EmptySamples);
@@ -180,12 +179,13 @@ impl MultivariateKDE {
     }
 
     /// Returns the number of dimensions.
+    #[cfg(test)]
     pub(crate) fn n_dims(&self) -> usize {
         self.n_dims
     }
 
     /// Returns the number of samples.
-    #[allow(dead_code)] // Will be used in subsequent stories
+    #[cfg(test)]
     pub(crate) fn n_samples(&self) -> usize {
         self.samples.len()
     }
@@ -197,7 +197,7 @@ impl MultivariateKDE {
     }
 
     /// Returns a reference to the samples.
-    #[allow(dead_code)] // Will be used in subsequent stories
+    #[cfg(test)]
     pub(crate) fn samples(&self) -> &[Vec<f64>] {
         &self.samples
     }
@@ -288,6 +288,7 @@ impl MultivariateKDE {
     /// # Panics
     ///
     /// Panics if `x.len() != self.n_dims`.
+    #[cfg(test)]
     pub(crate) fn pdf(&self, x: &[f64]) -> f64 {
         self.log_pdf(x).exp()
     }

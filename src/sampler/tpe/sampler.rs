@@ -642,8 +642,130 @@ impl Default for TpeSamplerBuilder {
     }
 }
 
+impl TpeSampler {
+    fn sample_float(
+        &self,
+        d: &crate::distribution::FloatDistribution,
+        good_trials: &[&CompletedTrial],
+        bad_trials: &[&CompletedTrial],
+        rng: &mut fastrand::Rng,
+    ) -> ParamValue {
+        let good_values: Vec<f64> = good_trials
+            .iter()
+            .flat_map(|t| t.params.values())
+            .filter_map(|v| match v {
+                ParamValue::Float(f) => Some(*f),
+                _ => None,
+            })
+            .filter(|&v| v >= d.low && v <= d.high)
+            .collect();
+
+        let bad_values: Vec<f64> = bad_trials
+            .iter()
+            .flat_map(|t| t.params.values())
+            .filter_map(|v| match v {
+                ParamValue::Float(f) => Some(*f),
+                _ => None,
+            })
+            .filter(|&v| v >= d.low && v <= d.high)
+            .collect();
+
+        if good_values.is_empty() || bad_values.is_empty() {
+            return ParamValue::Float(rng_util::f64_range(rng, d.low, d.high));
+        }
+
+        let value = tpe_common::sample_tpe_float(
+            d,
+            good_values,
+            bad_values,
+            self.n_ei_candidates,
+            self.kde_bandwidth,
+            rng,
+        );
+        ParamValue::Float(value)
+    }
+
+    fn sample_int(
+        &self,
+        d: &crate::distribution::IntDistribution,
+        good_trials: &[&CompletedTrial],
+        bad_trials: &[&CompletedTrial],
+        rng: &mut fastrand::Rng,
+    ) -> ParamValue {
+        let good_values: Vec<i64> = good_trials
+            .iter()
+            .flat_map(|t| t.params.values())
+            .filter_map(|v| match v {
+                ParamValue::Int(i) => Some(*i),
+                _ => None,
+            })
+            .filter(|&v| v >= d.low && v <= d.high)
+            .collect();
+
+        let bad_values: Vec<i64> = bad_trials
+            .iter()
+            .flat_map(|t| t.params.values())
+            .filter_map(|v| match v {
+                ParamValue::Int(i) => Some(*i),
+                _ => None,
+            })
+            .filter(|&v| v >= d.low && v <= d.high)
+            .collect();
+
+        if good_values.is_empty() || bad_values.is_empty() {
+            return common::sample_random(rng, &Distribution::Int(d.clone()));
+        }
+
+        let value = tpe_common::sample_tpe_int(
+            d,
+            good_values,
+            bad_values,
+            self.n_ei_candidates,
+            self.kde_bandwidth,
+            rng,
+        );
+        ParamValue::Int(value)
+    }
+
+    #[allow(clippy::unused_self)]
+    fn sample_categorical(
+        &self,
+        d: &crate::distribution::CategoricalDistribution,
+        good_trials: &[&CompletedTrial],
+        bad_trials: &[&CompletedTrial],
+        rng: &mut fastrand::Rng,
+    ) -> ParamValue {
+        let good_indices: Vec<usize> = good_trials
+            .iter()
+            .flat_map(|t| t.params.values())
+            .filter_map(|v| match v {
+                ParamValue::Categorical(i) => Some(*i),
+                _ => None,
+            })
+            .filter(|&i| i < d.n_choices)
+            .collect();
+
+        let bad_indices: Vec<usize> = bad_trials
+            .iter()
+            .flat_map(|t| t.params.values())
+            .filter_map(|v| match v {
+                ParamValue::Categorical(i) => Some(*i),
+                _ => None,
+            })
+            .filter(|&i| i < d.n_choices)
+            .collect();
+
+        if good_indices.is_empty() || bad_indices.is_empty() {
+            return common::sample_random(rng, &Distribution::Categorical(d.clone()));
+        }
+
+        let index =
+            tpe_common::sample_tpe_categorical(d.n_choices, &good_indices, &bad_indices, rng);
+        ParamValue::Categorical(index)
+    }
+}
+
 impl Sampler for TpeSampler {
-    #[allow(clippy::too_many_lines)]
     fn sample(
         &self,
         distribution: &Distribution,
@@ -670,123 +792,11 @@ impl Sampler for TpeSampler {
             return common::sample_random(&mut rng, distribution);
         }
 
-        // Extract parameter values for this distribution
-        // Since we don't have the parameter name here, we need to look at all
-        // trials and find matching distributions
-        // Note: This is a simplification - in practice, we'd need the param name
-        // For now, we'll collect values from trials that have this exact distribution type
-
         match distribution {
-            Distribution::Float(d) => {
-                // Collect float values from trials
-                let good_values: Vec<f64> = good_trials
-                    .iter()
-                    .flat_map(|t| t.params.values())
-                    .filter_map(|v| match v {
-                        ParamValue::Float(f) => Some(*f),
-                        _ => None,
-                    })
-                    .filter(|&v| v >= d.low && v <= d.high)
-                    .collect();
-
-                let bad_values: Vec<f64> = bad_trials
-                    .iter()
-                    .flat_map(|t| t.params.values())
-                    .filter_map(|v| match v {
-                        ParamValue::Float(f) => Some(*f),
-                        _ => None,
-                    })
-                    .filter(|&v| v >= d.low && v <= d.high)
-                    .collect();
-
-                // Need values in both groups for TPE
-                if good_values.is_empty() || bad_values.is_empty() {
-                    return common::sample_random(&mut rng, distribution);
-                }
-
-                let value = tpe_common::sample_tpe_float(
-                    d.low,
-                    d.high,
-                    d.log_scale,
-                    d.step,
-                    good_values,
-                    bad_values,
-                    self.n_ei_candidates,
-                    self.kde_bandwidth,
-                    &mut rng,
-                );
-                ParamValue::Float(value)
-            }
-            Distribution::Int(d) => {
-                let good_values: Vec<i64> = good_trials
-                    .iter()
-                    .flat_map(|t| t.params.values())
-                    .filter_map(|v| match v {
-                        ParamValue::Int(i) => Some(*i),
-                        _ => None,
-                    })
-                    .filter(|&v| v >= d.low && v <= d.high)
-                    .collect();
-
-                let bad_values: Vec<i64> = bad_trials
-                    .iter()
-                    .flat_map(|t| t.params.values())
-                    .filter_map(|v| match v {
-                        ParamValue::Int(i) => Some(*i),
-                        _ => None,
-                    })
-                    .filter(|&v| v >= d.low && v <= d.high)
-                    .collect();
-
-                if good_values.is_empty() || bad_values.is_empty() {
-                    return common::sample_random(&mut rng, distribution);
-                }
-
-                let value = tpe_common::sample_tpe_int(
-                    d.low,
-                    d.high,
-                    d.log_scale,
-                    d.step,
-                    good_values,
-                    bad_values,
-                    self.n_ei_candidates,
-                    self.kde_bandwidth,
-                    &mut rng,
-                );
-                ParamValue::Int(value)
-            }
+            Distribution::Float(d) => self.sample_float(d, &good_trials, &bad_trials, &mut rng),
+            Distribution::Int(d) => self.sample_int(d, &good_trials, &bad_trials, &mut rng),
             Distribution::Categorical(d) => {
-                let good_indices: Vec<usize> = good_trials
-                    .iter()
-                    .flat_map(|t| t.params.values())
-                    .filter_map(|v| match v {
-                        ParamValue::Categorical(i) => Some(*i),
-                        _ => None,
-                    })
-                    .filter(|&i| i < d.n_choices)
-                    .collect();
-
-                let bad_indices: Vec<usize> = bad_trials
-                    .iter()
-                    .flat_map(|t| t.params.values())
-                    .filter_map(|v| match v {
-                        ParamValue::Categorical(i) => Some(*i),
-                        _ => None,
-                    })
-                    .filter(|&i| i < d.n_choices)
-                    .collect();
-
-                if good_indices.is_empty() || bad_indices.is_empty() {
-                    return common::sample_random(&mut rng, distribution);
-                }
-
-                let index = tpe_common::sample_tpe_categorical(
-                    d.n_choices,
-                    &good_indices,
-                    &bad_indices,
-                    &mut rng,
-                );
-                ParamValue::Categorical(index)
+                self.sample_categorical(d, &good_trials, &bad_trials, &mut rng)
             }
         }
     }

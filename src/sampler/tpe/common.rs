@@ -1,21 +1,20 @@
 //! Shared TPE sampling functions used by both `TpeSampler` and `MotpeSampler`.
 
+use crate::distribution::{FloatDistribution, IntDistribution};
 use crate::kde::KernelDensityEstimator;
 use crate::rng_util;
 
 /// Samples using TPE for float distributions.
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn sample_tpe_float(
-    low: f64,
-    high: f64,
-    log_scale: bool,
-    step: Option<f64>,
+    dist: &FloatDistribution,
     good_values: Vec<f64>,
     bad_values: Vec<f64>,
     n_ei_candidates: usize,
     kde_bandwidth: Option<f64>,
     rng: &mut fastrand::Rng,
 ) -> f64 {
+    let (low, high, log_scale, step) = (dist.low, dist.high, dist.log_scale, dist.step);
+
     // Transform to internal space (log space if needed)
     let (internal_low, internal_high, good_internal, bad_internal) = if log_scale {
         let i_low = low.ln();
@@ -99,32 +98,31 @@ pub(crate) fn sample_tpe_float(
 }
 
 /// Samples using TPE for integer distributions.
-#[allow(
-    clippy::too_many_arguments,
-    clippy::cast_precision_loss,
-    clippy::cast_possible_truncation
-)]
+#[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
 pub(crate) fn sample_tpe_int(
-    low: i64,
-    high: i64,
-    log_scale: bool,
-    step: Option<i64>,
+    dist: &IntDistribution,
     good_values: Vec<i64>,
     bad_values: Vec<i64>,
     n_ei_candidates: usize,
     kde_bandwidth: Option<f64>,
     rng: &mut fastrand::Rng,
 ) -> i64 {
+    let (low, high, log_scale, step) = (dist.low, dist.high, dist.log_scale, dist.step);
+
     // Convert to floats for KDE
     let good_floats: Vec<f64> = good_values.into_iter().map(|v| v as f64).collect();
     let bad_floats: Vec<f64> = bad_values.into_iter().map(|v| v as f64).collect();
 
+    let float_dist = FloatDistribution {
+        low: low as f64,
+        high: high as f64,
+        log_scale,
+        step: step.map(|s| s as f64),
+    };
+
     // Use float TPE sampling
     let float_value = sample_tpe_float(
-        low as f64,
-        high as f64,
-        log_scale,
-        step.map(|s| s as f64),
+        &float_dist,
         good_floats,
         bad_floats,
         n_ei_candidates,

@@ -41,7 +41,6 @@ use core::fmt::Write as _;
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use crate::distribution::Distribution;
 use crate::param::ParamValue;
 use crate::parameter::ParamId;
 use crate::sampler::CompletedTrial;
@@ -156,8 +155,6 @@ fn build_html(
 /// Metadata about each parameter seen across trials.
 struct ParamMeta {
     label: String,
-    #[allow(dead_code)]
-    dist: Option<Distribution>,
 }
 
 /// Collect parameter labels and distributions across all trials.
@@ -171,8 +168,7 @@ fn collect_param_info(trials: &[CompletedTrial<f64>]) -> BTreeMap<ParamId, Param
                     .get(&id)
                     .cloned()
                     .unwrap_or_else(|| id.to_string());
-                let dist = trial.distributions.get(&id).cloned();
-                ParamMeta { label, dist }
+                ParamMeta { label }
             });
         }
     }

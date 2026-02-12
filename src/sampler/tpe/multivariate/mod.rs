@@ -389,7 +389,6 @@ impl MultivariateTpeSampler {
     /// let params = sampler.sample_joint(&search_space, &history);
     /// ```
     #[must_use]
-    #[allow(clippy::too_many_lines)]
     pub fn sample_joint(
         &self,
         search_space: &HashMap<ParamId, Distribution>,

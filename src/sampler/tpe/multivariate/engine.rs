@@ -103,6 +103,30 @@ impl MultivariateTpeSampler {
         result
     }
 
+    /// Validates observations and fits multivariate KDEs for good and bad groups.
+    ///
+    /// Returns `None` if observations are invalid or KDE construction fails.
+    fn try_fit_kdes(
+        good_obs: Vec<Vec<f64>>,
+        bad_obs: Vec<Vec<f64>>,
+        expected_dims: usize,
+    ) -> Option<(crate::kde::MultivariateKDE, crate::kde::MultivariateKDE)> {
+        use crate::kde::MultivariateKDE;
+
+        let valid = !good_obs.is_empty()
+            && !bad_obs.is_empty()
+            && good_obs.iter().all(|obs| obs.len() == expected_dims)
+            && bad_obs.iter().all(|obs| obs.len() == expected_dims);
+
+        if !valid {
+            return None;
+        }
+
+        let good_kde = MultivariateKDE::new(good_obs).ok()?;
+        let bad_kde = MultivariateKDE::new(bad_obs).ok()?;
+        Some((good_kde, bad_kde))
+    }
+
     /// Samples parameters as a single group using multivariate TPE.
     ///
     /// This is the core multivariate TPE sampling logic, used both in non-grouped mode
@@ -117,14 +141,12 @@ impl MultivariateTpeSampler {
     /// # Returns
     ///
     /// A `HashMap` mapping parameter names to their sampled values.
-    #[allow(clippy::too_many_lines)]
     pub(crate) fn sample_single_group(
         &self,
         search_space: &HashMap<ParamId, Distribution>,
         history: &[CompletedTrial],
         rng: &mut fastrand::Rng,
     ) -> HashMap<ParamId, ParamValue> {
-        use crate::kde::MultivariateKDE;
         use crate::sampler::tpe::IntersectionSearchSpace;
         use crate::sampler::tpe::common;
 
@@ -165,7 +187,6 @@ impl MultivariateTpeSampler {
             .collect();
 
         if param_order.is_empty() {
-            // Only categorical parameters in intersection - fill remaining with independent TPE
             self.fill_remaining_independent_with_rng(
                 search_space,
                 &intersection,
@@ -178,43 +199,12 @@ impl MultivariateTpeSampler {
 
         param_order.sort_by_key(|id| format!("{id}"));
 
-        // Extract observations and validate
+        // Extract observations, validate, and fit KDEs
         let good_obs = self.extract_observations(&good, &param_order);
         let bad_obs = self.extract_observations(&bad, &param_order);
-        let expected_dims = param_order.len();
 
-        let valid = !good_obs.is_empty()
-            && !bad_obs.is_empty()
-            && good_obs.iter().all(|obs| obs.len() == expected_dims)
-            && bad_obs.iter().all(|obs| obs.len() == expected_dims);
-
-        if !valid {
-            // Observations invalid - fill remaining with independent TPE
-            self.fill_remaining_independent_with_rng(
-                search_space,
-                &intersection,
-                history,
-                &mut result,
-                rng,
-            );
-            return result;
-        }
-
-        // Fit KDEs using let...else pattern
-        let Ok(good_kde) = MultivariateKDE::new(good_obs) else {
-            // KDE construction failed - fill remaining with independent TPE
-            self.fill_remaining_independent_with_rng(
-                search_space,
-                &intersection,
-                history,
-                &mut result,
-                rng,
-            );
-            return result;
-        };
-
-        let Ok(bad_kde) = MultivariateKDE::new(bad_obs) else {
-            // KDE construction failed - fill remaining with independent TPE
+        let Some((good_kde, bad_kde)) = Self::try_fit_kdes(good_obs, bad_obs, param_order.len())
+        else {
             self.fill_remaining_independent_with_rng(
                 search_space,
                 &intersection,
@@ -289,7 +279,7 @@ impl MultivariateTpeSampler {
     /// from the "good" KDE (l(x)) and selects the one that maximizes the ratio l(x)/g(x),
     /// which is equivalent to maximizing `log(l(x)) - log(g(x))`.
     #[must_use]
-    #[allow(dead_code)] // Used by tests
+    #[cfg(test)]
     pub(crate) fn select_candidate(
         &self,
         good_kde: &crate::kde::MultivariateKDE,
@@ -366,43 +356,6 @@ impl MultivariateTpeSampler {
         candidates.into_iter().nth(best_idx).unwrap_or_default()
     }
 
-    /// Fills remaining parameters in result using independent TPE sampling.
-    ///
-    /// This method is used to sample parameters that are not in the intersection
-    /// search space. It uses independent univariate TPE sampling for each parameter,
-    /// similar to the standard [`TpeSampler`].
-    ///
-    /// When there isn't enough history for a parameter, falls back to uniform sampling.
-    #[allow(dead_code)]
-    pub(crate) fn fill_remaining_independent(
-        &self,
-        search_space: &HashMap<ParamId, Distribution>,
-        _intersection: &HashMap<ParamId, Distribution>,
-        history: &[CompletedTrial],
-        result: &mut HashMap<ParamId, ParamValue>,
-    ) {
-        // Identify parameters not in result (and not in intersection)
-        let missing_params: Vec<(&ParamId, &Distribution)> = search_space
-            .iter()
-            .filter(|(id, _)| !result.contains_key(id))
-            .collect();
-
-        if missing_params.is_empty() {
-            return;
-        }
-
-        // Split trials for independent sampling
-        let (good_trials, bad_trials) = self.split_trials(&history.iter().collect::<Vec<_>>());
-
-        let mut rng = self.rng.lock();
-
-        for (param_id, dist) in missing_params {
-            let value =
-                self.sample_independent_tpe(*param_id, dist, &good_trials, &bad_trials, &mut rng);
-            result.insert(*param_id, value);
-        }
-    }
-
     /// Fills remaining parameters using independent TPE sampling with an external RNG.
     ///
     /// This variant accepts an external RNG, used when the caller already holds the lock.
@@ -437,7 +390,7 @@ impl MultivariateTpeSampler {
     /// Samples all parameters using independent TPE sampling.
     ///
     /// This is used as a complete fallback when no intersection search space exists.
-    #[allow(dead_code)] // Used by tests
+    #[cfg(test)]
     pub(crate) fn sample_all_independent(
         &self,
         search_space: &HashMap<ParamId, Distribution>,
@@ -485,7 +438,6 @@ impl MultivariateTpeSampler {
     ///
     /// This method extracts values for the given parameter from good and bad trials,
     /// fits univariate KDEs, and samples using the TPE acquisition function.
-    #[allow(clippy::too_many_lines)]
     pub(crate) fn sample_independent_tpe(
         &self,
         param_id: ParamId,
@@ -494,114 +446,136 @@ impl MultivariateTpeSampler {
         bad_trials: &[&CompletedTrial],
         rng: &mut fastrand::Rng,
     ) -> ParamValue {
-        use crate::sampler::tpe::common;
-
         match distribution {
             Distribution::Float(d) => {
-                let good_values: Vec<f64> = good_trials
-                    .iter()
-                    .filter_map(|t| t.params.get(&param_id))
-                    .filter_map(|v| match v {
-                        ParamValue::Float(f) => Some(*f),
-                        _ => None,
-                    })
-                    .filter(|&v| v >= d.low && v <= d.high)
-                    .collect();
-
-                let bad_values: Vec<f64> = bad_trials
-                    .iter()
-                    .filter_map(|t| t.params.get(&param_id))
-                    .filter_map(|v| match v {
-                        ParamValue::Float(f) => Some(*f),
-                        _ => None,
-                    })
-                    .filter(|&v| v >= d.low && v <= d.high)
-                    .collect();
-
-                if good_values.is_empty() || bad_values.is_empty() {
-                    return crate::sampler::common::sample_random(rng, distribution);
-                }
-
-                let value = common::sample_tpe_float(
-                    d.low,
-                    d.high,
-                    d.log_scale,
-                    d.step,
-                    good_values,
-                    bad_values,
-                    self.n_ei_candidates,
-                    None,
-                    rng,
-                );
-                ParamValue::Float(value)
+                self.sample_independent_float(param_id, d, good_trials, bad_trials, rng)
             }
             Distribution::Int(d) => {
-                let good_values: Vec<i64> = good_trials
-                    .iter()
-                    .filter_map(|t| t.params.get(&param_id))
-                    .filter_map(|v| match v {
-                        ParamValue::Int(i) => Some(*i),
-                        _ => None,
-                    })
-                    .filter(|&v| v >= d.low && v <= d.high)
-                    .collect();
-
-                let bad_values: Vec<i64> = bad_trials
-                    .iter()
-                    .filter_map(|t| t.params.get(&param_id))
-                    .filter_map(|v| match v {
-                        ParamValue::Int(i) => Some(*i),
-                        _ => None,
-                    })
-                    .filter(|&v| v >= d.low && v <= d.high)
-                    .collect();
-
-                if good_values.is_empty() || bad_values.is_empty() {
-                    return crate::sampler::common::sample_random(rng, distribution);
-                }
-
-                let value = common::sample_tpe_int(
-                    d.low,
-                    d.high,
-                    d.log_scale,
-                    d.step,
-                    good_values,
-                    bad_values,
-                    self.n_ei_candidates,
-                    None,
-                    rng,
-                );
-                ParamValue::Int(value)
+                self.sample_independent_int(param_id, d, good_trials, bad_trials, rng)
             }
             Distribution::Categorical(d) => {
-                let good_indices: Vec<usize> = good_trials
-                    .iter()
-                    .filter_map(|t| t.params.get(&param_id))
-                    .filter_map(|v| match v {
-                        ParamValue::Categorical(i) => Some(*i),
-                        _ => None,
-                    })
-                    .filter(|&i| i < d.n_choices)
-                    .collect();
-
-                let bad_indices: Vec<usize> = bad_trials
-                    .iter()
-                    .filter_map(|t| t.params.get(&param_id))
-                    .filter_map(|v| match v {
-                        ParamValue::Categorical(i) => Some(*i),
-                        _ => None,
-                    })
-                    .filter(|&i| i < d.n_choices)
-                    .collect();
-
-                if good_indices.is_empty() || bad_indices.is_empty() {
-                    return crate::sampler::common::sample_random(rng, distribution);
-                }
-
-                let idx =
-                    common::sample_tpe_categorical(d.n_choices, &good_indices, &bad_indices, rng);
-                ParamValue::Categorical(idx)
+                self.sample_independent_categorical(param_id, d, good_trials, bad_trials, rng)
             }
         }
+    }
+
+    fn sample_independent_float(
+        &self,
+        param_id: ParamId,
+        d: &crate::distribution::FloatDistribution,
+        good_trials: &[&CompletedTrial],
+        bad_trials: &[&CompletedTrial],
+        rng: &mut fastrand::Rng,
+    ) -> ParamValue {
+        use crate::sampler::tpe::common;
+
+        let good_values: Vec<f64> = good_trials
+            .iter()
+            .filter_map(|t| t.params.get(&param_id))
+            .filter_map(|v| match v {
+                ParamValue::Float(f) => Some(*f),
+                _ => None,
+            })
+            .filter(|&v| v >= d.low && v <= d.high)
+            .collect();
+
+        let bad_values: Vec<f64> = bad_trials
+            .iter()
+            .filter_map(|t| t.params.get(&param_id))
+            .filter_map(|v| match v {
+                ParamValue::Float(f) => Some(*f),
+                _ => None,
+            })
+            .filter(|&v| v >= d.low && v <= d.high)
+            .collect();
+
+        if good_values.is_empty() || bad_values.is_empty() {
+            return crate::sampler::common::sample_random(rng, &Distribution::Float(d.clone()));
+        }
+
+        let value =
+            common::sample_tpe_float(d, good_values, bad_values, self.n_ei_candidates, None, rng);
+        ParamValue::Float(value)
+    }
+
+    fn sample_independent_int(
+        &self,
+        param_id: ParamId,
+        d: &crate::distribution::IntDistribution,
+        good_trials: &[&CompletedTrial],
+        bad_trials: &[&CompletedTrial],
+        rng: &mut fastrand::Rng,
+    ) -> ParamValue {
+        use crate::sampler::tpe::common;
+
+        let good_values: Vec<i64> = good_trials
+            .iter()
+            .filter_map(|t| t.params.get(&param_id))
+            .filter_map(|v| match v {
+                ParamValue::Int(i) => Some(*i),
+                _ => None,
+            })
+            .filter(|&v| v >= d.low && v <= d.high)
+            .collect();
+
+        let bad_values: Vec<i64> = bad_trials
+            .iter()
+            .filter_map(|t| t.params.get(&param_id))
+            .filter_map(|v| match v {
+                ParamValue::Int(i) => Some(*i),
+                _ => None,
+            })
+            .filter(|&v| v >= d.low && v <= d.high)
+            .collect();
+
+        if good_values.is_empty() || bad_values.is_empty() {
+            return crate::sampler::common::sample_random(rng, &Distribution::Int(d.clone()));
+        }
+
+        let value =
+            common::sample_tpe_int(d, good_values, bad_values, self.n_ei_candidates, None, rng);
+        ParamValue::Int(value)
+    }
+
+    #[allow(clippy::unused_self)]
+    fn sample_independent_categorical(
+        &self,
+        param_id: ParamId,
+        d: &crate::distribution::CategoricalDistribution,
+        good_trials: &[&CompletedTrial],
+        bad_trials: &[&CompletedTrial],
+        rng: &mut fastrand::Rng,
+    ) -> ParamValue {
+        use crate::sampler::tpe::common;
+
+        let good_indices: Vec<usize> = good_trials
+            .iter()
+            .filter_map(|t| t.params.get(&param_id))
+            .filter_map(|v| match v {
+                ParamValue::Categorical(i) => Some(*i),
+                _ => None,
+            })
+            .filter(|&i| i < d.n_choices)
+            .collect();
+
+        let bad_indices: Vec<usize> = bad_trials
+            .iter()
+            .filter_map(|t| t.params.get(&param_id))
+            .filter_map(|v| match v {
+                ParamValue::Categorical(i) => Some(*i),
+                _ => None,
+            })
+            .filter(|&i| i < d.n_choices)
+            .collect();
+
+        if good_indices.is_empty() || bad_indices.is_empty() {
+            return crate::sampler::common::sample_random(
+                rng,
+                &Distribution::Categorical(d.clone()),
+            );
+        }
+
+        let idx = common::sample_tpe_categorical(d.n_choices, &good_indices, &bad_indices, rng);
+        ParamValue::Categorical(idx)
     }
 }
