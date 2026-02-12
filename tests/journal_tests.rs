@@ -3,6 +3,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use std::io::Write;
+
 use optimizer::parameter::{FloatParam, Parameter};
 use optimizer::sampler::CompletedTrial;
 use optimizer::sampler::random::RandomSampler;
@@ -314,6 +316,60 @@ fn accepts_valid_journal_with_distributions() {
     let loaded = storage.trials_arc().read().clone();
     assert_eq!(loaded.len(), 1);
     assert_eq!(loaded[0].value, 0.25);
+
+    std::fs::remove_file(&path).ok();
+}
+
+#[test]
+fn refresh_skips_own_writes() {
+    let path = temp_path();
+    let storage = JournalStorage::new(&path);
+
+    for i in 0..5 {
+        storage.push(sample_trial(i, i as f64));
+        // Our own push advanced the offset, so refresh should find nothing new.
+        assert!(!storage.refresh(), "refresh returned true after push {i}");
+    }
+
+    assert_eq!(storage.trials_arc().read().len(), 5);
+    std::fs::remove_file(&path).ok();
+}
+
+#[test]
+fn refresh_picks_up_external_writes() {
+    let path = temp_path();
+    let storage = JournalStorage::new(&path);
+
+    // Push 3 trials through the storage (advances offset).
+    for i in 0..3 {
+        storage.push(sample_trial(i, i as f64));
+    }
+    assert_eq!(storage.trials_arc().read().len(), 3);
+
+    // Simulate an external process appending 2 more lines directly.
+    {
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap();
+        for i in 3..5u64 {
+            let trial = sample_trial(i, i as f64);
+            let line = serde_json::to_string(&trial).unwrap();
+            writeln!(file, "{line}").unwrap();
+        }
+        file.sync_all().unwrap();
+    }
+
+    // refresh() should pick up the 2 external trials.
+    assert!(storage.refresh(), "refresh should detect external writes");
+    assert_eq!(storage.trials_arc().read().len(), 5);
+
+    // A second refresh should be a no-op.
+    assert!(
+        !storage.refresh(),
+        "second refresh should return false (no new data)"
+    );
+    assert_eq!(storage.trials_arc().read().len(), 5);
 
     std::fs::remove_file(&path).ok();
 }

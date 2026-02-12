@@ -69,8 +69,9 @@
 //! [`MemoryStorage`](super::MemoryStorage) instead (the default).
 
 use core::marker::PhantomData;
+use core::sync::atomic::{AtomicU64, Ordering};
 use std::fs::{File, OpenOptions};
-use std::io::{BufRead, BufReader, Seek, SeekFrom, Write};
+use std::io::{BufRead, BufReader, Read as _, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -112,6 +113,8 @@ pub struct JournalStorage<V = f64> {
     path: PathBuf,
     /// Serialise in-process writes so we only hold the file lock briefly.
     write_lock: Mutex<()>,
+    /// Byte offset of last-read position for incremental refresh.
+    file_offset: AtomicU64,
     _marker: PhantomData<V>,
 }
 
@@ -131,6 +134,7 @@ impl<V: Serialize + DeserializeOwned + Send + Sync> JournalStorage<V> {
             memory: MemoryStorage::new(),
             path: path.as_ref().to_path_buf(),
             write_lock: Mutex::new(()),
+            file_offset: AtomicU64::new(0),
             _marker: PhantomData,
         }
     }
@@ -146,11 +150,12 @@ impl<V: Serialize + DeserializeOwned + Send + Sync> JournalStorage<V> {
     /// exists but cannot be read or parsed.
     pub fn open(path: impl AsRef<Path>) -> crate::Result<Self> {
         let path = path.as_ref().to_path_buf();
-        let trials = load_trials_from_file(&path)?;
+        let (trials, offset) = load_trials_from_file(&path)?;
         Ok(Self {
             memory: MemoryStorage::with_trials(trials),
             path,
             write_lock: Mutex::new(()),
+            file_offset: AtomicU64::new(offset),
             _marker: PhantomData,
         })
     }
@@ -180,6 +185,11 @@ impl<V: Serialize + DeserializeOwned + Send + Sync> JournalStorage<V> {
         file.sync_data()
             .map_err(|e| crate::Error::Storage(e.to_string()))?;
 
+        let pos = file
+            .stream_position()
+            .map_err(|e| crate::Error::Storage(e.to_string()))?;
+        self.file_offset.store(pos, Ordering::SeqCst);
+
         file.unlock()
             .map_err(|e| crate::Error::Storage(e.to_string()))?;
 
@@ -203,35 +213,96 @@ impl<V: Serialize + DeserializeOwned + Send + Sync> Storage<V> for JournalStorag
     }
 
     fn refresh(&self) -> bool {
-        let Ok(loaded) = load_trials_from_file::<V>(&self.path) else {
+        let Ok(file) = File::open(&self.path) else {
             return false;
         };
-        let mut guard = self.memory.trials_arc().write();
-        if loaded.len() > guard.len() {
-            if let Some(max_id) = loaded.iter().map(|t| t.id).max() {
-                self.memory.bump_next_id(max_id + 1);
-            }
-            *guard = loaded;
-            true
-        } else {
-            false
+
+        if file.lock_shared().is_err() {
+            return false;
         }
+
+        let offset = self.file_offset.load(Ordering::SeqCst);
+
+        let file_size = if let Ok(m) = file.metadata() {
+            m.len()
+        } else {
+            let _ = file.unlock();
+            return false;
+        };
+
+        if file_size <= offset {
+            let _ = file.unlock();
+            return false;
+        }
+
+        let mut buf = String::new();
+        let mut handle = &file;
+        if handle.seek(SeekFrom::Start(offset)).is_err() {
+            let _ = file.unlock();
+            return false;
+        }
+        if handle.read_to_string(&mut buf).is_err() {
+            let _ = file.unlock();
+            return false;
+        }
+
+        let _ = file.unlock();
+
+        let bytes_read = buf.len() as u64;
+        let mut new_trials = Vec::new();
+
+        for line in buf.lines() {
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+            let trial: CompletedTrial<V> = match serde_json::from_str(line) {
+                Ok(t) => t,
+                Err(_) => return false,
+            };
+            if trial.validate().is_err() {
+                return false;
+            }
+            new_trials.push(trial);
+        }
+
+        if new_trials.is_empty() {
+            self.file_offset
+                .store(offset + bytes_read, Ordering::SeqCst);
+            return false;
+        }
+
+        let mut guard = self.memory.trials_arc().write();
+        if let Some(max_id) = new_trials.iter().map(|t| t.id).max() {
+            self.memory.bump_next_id(max_id + 1);
+        }
+        guard.extend(new_trials);
+        self.file_offset
+            .store(offset + bytes_read, Ordering::SeqCst);
+        true
     }
 }
 
-/// Read all trials from a JSONL file.  Returns an empty vec if the
-/// file does not exist.
+/// Read all trials from a JSONL file.  Returns an empty vec (and
+/// offset 0) if the file does not exist.  The returned `u64` is the
+/// file size at the time of reading, suitable for initialising the
+/// incremental-refresh offset.
 fn load_trials_from_file<V: DeserializeOwned>(
     path: &Path,
-) -> crate::Result<Vec<CompletedTrial<V>>> {
+) -> crate::Result<(Vec<CompletedTrial<V>>, u64)> {
     let file = match File::open(path) {
         Ok(f) => f,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok((Vec::new(), 0)),
         Err(e) => return Err(crate::Error::Storage(e.to_string())),
     };
 
     file.lock_shared()
         .map_err(|e| crate::Error::Storage(e.to_string()))?;
+
+    let file_size = file
+        .metadata()
+        .map_err(|e| crate::Error::Storage(e.to_string()))?
+        .len();
 
     let reader = BufReader::new(&file);
     let mut trials = Vec::new();
@@ -251,5 +322,5 @@ fn load_trials_from_file<V: DeserializeOwned>(
     file.unlock()
         .map_err(|e| crate::Error::Storage(e.to_string()))?;
 
-    Ok(trials)
+    Ok((trials, file_size))
 }
