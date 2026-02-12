@@ -220,6 +220,23 @@ where
     }
 }
 
+#[cfg(feature = "serde")]
+impl<V: PartialOrd + Clone + serde::Serialize> Study<V> {
+    /// Export trials as a pretty-printed JSON array to a file.
+    ///
+    /// Each element in the array is a serialized [`CompletedTrial`].
+    /// Requires the `serde` feature.
+    ///
+    /// # Errors
+    ///
+    /// Returns an I/O error if the file cannot be created or written.
+    pub fn export_json(&self, path: impl AsRef<std::path::Path>) -> std::io::Result<()> {
+        let file = std::fs::File::create(path)?;
+        let trials = self.trials();
+        serde_json::to_writer_pretty(file, &trials).map_err(std::io::Error::other)
+    }
+}
+
 impl Study<f64> {
     /// Generate an HTML report with interactive Plotly.js charts.
     ///
