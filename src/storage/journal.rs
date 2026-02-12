@@ -149,9 +149,13 @@ impl<V: Serialize + DeserializeOwned + Send + Sync> JournalStorage<V> {
     /// [`JournalStorage::open`] instead.
     #[must_use]
     pub fn new(path: impl AsRef<Path>) -> Self {
+        let path = path
+            .as_ref()
+            .canonicalize()
+            .unwrap_or_else(|_| path.as_ref().to_path_buf());
         Self {
             memory: MemoryStorage::new(),
-            path: path.as_ref().to_path_buf(),
+            path,
             write_lock: Mutex::new(()),
             file_offset: AtomicU64::new(0),
             _marker: PhantomData,
@@ -168,7 +172,10 @@ impl<V: Serialize + DeserializeOwned + Send + Sync> JournalStorage<V> {
     /// Return a [`Storage`](crate::Error::Storage) error if the file
     /// exists but cannot be read or parsed.
     pub fn open(path: impl AsRef<Path>) -> crate::Result<Self> {
-        let path = path.as_ref().to_path_buf();
+        let path = path
+            .as_ref()
+            .canonicalize()
+            .unwrap_or_else(|_| path.as_ref().to_path_buf());
         let (trials, offset) = load_trials_from_file(&path)?;
         Ok(Self {
             memory: MemoryStorage::with_trials(trials),
