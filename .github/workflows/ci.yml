@@ -51,6 +51,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Run tests
         run: cargo test --verbose --all-features --all-targets
+      - name: Run doc tests
+        run: cargo test --verbose --all-features --doc
 
   examples:
     name: Examples
@@ -62,16 +64,16 @@ jobs:
           rustup override set stable
           rustup update stable
       - uses: Swatinem/rust-cache@v2
-      - name: Run sync example (ml_hyperparameter_tuning)
-        run: cargo run --example ml_hyperparameter_tuning
-      - name: Run sync example (benchmark_convergence)
-        run: cargo run --example benchmark_convergence
-      - name: Run derive example (parameter_api)
-        run: cargo run --example parameter_api --features derive
-      - name: Run async example (async_api_optimization)
-        run: cargo run --example async_api_optimization --features async
-      - name: Run visualization example (visualization_demo)
-        run: cargo run --example visualization_demo
+      - name: Run basic_optimization
+        run: cargo run --example basic_optimization
+      - name: Run sampler_comparison
+        run: cargo run --example sampler_comparison
+      - name: Run pruning_and_callbacks
+        run: cargo run --example pruning_and_callbacks
+      - name: Run parameter_types
+        run: cargo run --example parameter_types --features derive
+      - name: Run advanced_features
+        run: cargo run --example advanced_features --features "async,journal"
 
   docs:
     name: Docs
