@@ -1,5 +1,3 @@
-#![cfg(feature = "gp")]
-
 use optimizer::prelude::*;
 use optimizer::sampler::gp::GpSampler;
 

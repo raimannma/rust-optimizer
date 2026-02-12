@@ -1,5 +1,3 @@
-#![cfg(feature = "cma-es")]
-
 use optimizer::prelude::*;
 use optimizer::sampler::cma_es::CmaEsSampler;
 

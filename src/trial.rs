@@ -483,3 +483,164 @@ impl Trial {
         Ok(result)
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::float_cmp)]
+mod tests {
+    use crate::parameter::{BoolParam, CategoricalParam, FloatParam, IntParam, Parameter};
+    use crate::types::TrialState;
+
+    #[test]
+    fn trial_state() {
+        // from test_trial_state (L643 of integration.rs)
+        let trial = super::Trial::new(0);
+        assert_eq!(trial.state(), TrialState::Running);
+    }
+
+    #[test]
+    fn trial_params_access() {
+        // from test_trial_params_access (L651)
+        let x_param = FloatParam::new(0.0, 1.0);
+        let n_param = IntParam::new(1, 10);
+        let mut trial = super::Trial::new(0);
+
+        x_param.suggest(&mut trial).unwrap();
+        n_param.suggest(&mut trial).unwrap();
+
+        let params = trial.params();
+        assert_eq!(params.len(), 2);
+    }
+
+    #[test]
+    fn trial_debug_format() {
+        // from test_trial_debug_format (L792)
+        let param = FloatParam::new(0.0, 1.0);
+        let mut trial = super::Trial::new(42);
+        param.suggest(&mut trial).unwrap();
+
+        let debug_str = format!("{trial:?}");
+
+        assert!(debug_str.contains("Trial"));
+        assert!(debug_str.contains("42"));
+        assert!(debug_str.contains("has_sampler"));
+    }
+
+    #[test]
+    fn distributions_access() {
+        // from test_distributions_access (L960)
+        let x_param = FloatParam::new(0.0, 1.0);
+        let n_param = IntParam::new(1, 10);
+        let opt_param = CategoricalParam::new(vec!["a", "b", "c"]);
+        let mut trial = super::Trial::new(0);
+
+        x_param.suggest(&mut trial).unwrap();
+        n_param.suggest(&mut trial).unwrap();
+        opt_param.suggest(&mut trial).unwrap();
+
+        let dists = trial.distributions();
+        assert_eq!(dists.len(), 3);
+    }
+
+    #[test]
+    fn multiple_parameters_independent_caching() {
+        // from test_multiple_parameters_independent_caching (L356)
+        let x_param = FloatParam::new(0.0, 1.0);
+        let y_param = FloatParam::new(0.0, 1.0);
+        let n_param = IntParam::new(1, 10);
+        let opt_param = CategoricalParam::new(vec!["a", "b"]);
+        let mut trial = super::Trial::new(0);
+
+        let x = x_param.suggest(&mut trial).unwrap();
+        let y = y_param.suggest(&mut trial).unwrap();
+        let n = n_param.suggest(&mut trial).unwrap();
+        let opt = opt_param.suggest(&mut trial).unwrap();
+
+        assert_eq!(x, x_param.suggest(&mut trial).unwrap());
+        assert_eq!(y, y_param.suggest(&mut trial).unwrap());
+        assert_eq!(n, n_param.suggest(&mut trial).unwrap());
+        assert_eq!(opt, opt_param.suggest(&mut trial).unwrap());
+    }
+
+    #[test]
+    fn suggest_bool_multiple_parameters() {
+        // from test_suggest_bool_multiple_parameters (L1131)
+        let dropout_param = BoolParam::new();
+        let batchnorm_param = BoolParam::new();
+        let skip_param = BoolParam::new();
+        let mut trial = super::Trial::new(0);
+
+        let a = dropout_param.suggest(&mut trial).unwrap();
+        let b = batchnorm_param.suggest(&mut trial).unwrap();
+        let c = skip_param.suggest(&mut trial).unwrap();
+
+        assert_eq!(a, dropout_param.suggest(&mut trial).unwrap());
+        assert_eq!(b, batchnorm_param.suggest(&mut trial).unwrap());
+        assert_eq!(c, skip_param.suggest(&mut trial).unwrap());
+    }
+
+    #[test]
+    fn param_name() {
+        // from test_param_name (L1312)
+        let param = FloatParam::new(0.0, 1.0).name("learning_rate");
+        let mut trial = super::Trial::new(0);
+        param.suggest(&mut trial).unwrap();
+
+        let labels = trial.param_labels();
+        let label = labels.values().next().unwrap();
+        assert_eq!(label, "learning_rate");
+    }
+
+    #[test]
+    fn step_float_snaps_to_grid() {
+        // from test_step_float_snaps_to_grid (L676)
+        let param = FloatParam::new(0.0, 1.0).step(0.25);
+        let mut trial = super::Trial::new(0);
+
+        let x = param.suggest(&mut trial).unwrap();
+
+        let valid_values = [0.0, 0.25, 0.5, 0.75, 1.0];
+        let is_valid = valid_values.iter().any(|&v| (x - v).abs() < 1e-10);
+        assert!(is_valid, "stepped float {x} should snap to grid");
+    }
+
+    #[test]
+    fn step_int_snaps_to_grid() {
+        // from test_step_int_snaps_to_grid (L689)
+        let param = IntParam::new(0, 100).step(25);
+        let mut trial = super::Trial::new(0);
+
+        let n = param.suggest(&mut trial).unwrap();
+
+        assert!(
+            n % 25 == 0 && (0..=100).contains(&n),
+            "stepped int {n} should snap to grid"
+        );
+    }
+
+    #[test]
+    fn int_bounds_with_low_equals_high() {
+        // from test_int_bounds_with_low_equals_high (L1086)
+        let mut trial = super::Trial::new(0);
+
+        let n_param = IntParam::new(5, 5);
+        let n = n_param.suggest(&mut trial).unwrap();
+        assert_eq!(n, 5);
+
+        let x_param = FloatParam::new(3.0, 3.0);
+        let x = x_param.suggest(&mut trial).unwrap();
+        assert_eq!(x, 3.0);
+    }
+
+    #[test]
+    fn single_value_float_range() {
+        // from test_single_value_float_range (L1296)
+        let param = FloatParam::new(4.2, 4.2);
+        let mut trial = super::Trial::new(0);
+
+        let x = param.suggest(&mut trial).unwrap();
+        assert!(
+            (x - 4.2).abs() < f64::EPSILON,
+            "single-value range should return that value"
+        );
+    }
+}
