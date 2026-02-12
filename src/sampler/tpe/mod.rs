@@ -59,6 +59,7 @@
 //! let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
 //! ```
 
+pub(crate) mod common;
 mod gamma;
 mod multivariate;
 mod sampler;

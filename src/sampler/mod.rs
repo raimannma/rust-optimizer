@@ -3,6 +3,7 @@
 pub mod bohb;
 #[cfg(feature = "cma-es")]
 pub mod cma_es;
+pub(crate) mod common;
 pub mod de;
 pub(crate) mod genetic;
 #[cfg(feature = "gp")]

@@ -127,50 +127,7 @@ impl Sampler for RandomSampler {
             rng_util::distribution_fingerprint(distribution).wrapping_add(seq),
         ));
 
-        match distribution {
-            Distribution::Float(d) => {
-                let value = if d.log_scale {
-                    // Sample uniformly in log space
-                    let log_low = d.low.ln();
-                    let log_high = d.high.ln();
-                    let log_value = rng_util::f64_range(&mut rng, log_low, log_high);
-                    log_value.exp()
-                } else if let Some(step) = d.step {
-                    // Sample from step grid
-                    let n_steps = ((d.high - d.low) / step).floor() as i64;
-                    let k = rng.i64(0..=n_steps);
-                    d.low + (k as f64) * step
-                } else {
-                    // Uniform sampling
-                    rng_util::f64_range(&mut rng, d.low, d.high)
-                };
-                ParamValue::Float(value)
-            }
-            Distribution::Int(d) => {
-                let value = if d.log_scale {
-                    // Sample uniformly in log space, then round
-                    let log_low = (d.low as f64).ln();
-                    let log_high = (d.high as f64).ln();
-                    let log_value = rng_util::f64_range(&mut rng, log_low, log_high);
-                    let raw = log_value.exp().round() as i64;
-                    // Clamp to bounds since rounding might push outside
-                    raw.clamp(d.low, d.high)
-                } else if let Some(step) = d.step {
-                    // Sample from step grid
-                    let n_steps = (d.high - d.low) / step;
-                    let k = rng.i64(0..=n_steps);
-                    d.low + k * step
-                } else {
-                    // Uniform sampling
-                    rng.i64(d.low..=d.high)
-                };
-                ParamValue::Int(value)
-            }
-            Distribution::Categorical(d) => {
-                let index = rng.usize(0..d.n_choices);
-                ParamValue::Categorical(index)
-            }
-        }
+        super::common::sample_random(&mut rng, distribution)
     }
 }
 

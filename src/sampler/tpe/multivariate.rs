@@ -810,53 +810,8 @@ impl MultivariateTpeSampler {
     ) -> HashMap<ParamId, ParamValue> {
         search_space
             .iter()
-            .map(|(id, dist)| (*id, Self::sample_uniform_single(dist, rng)))
+            .map(|(id, dist)| (*id, crate::sampler::common::sample_random(rng, dist)))
             .collect()
-    }
-
-    /// Samples a single parameter uniformly at random from its distribution.
-    fn sample_uniform_single(distribution: &Distribution, rng: &mut fastrand::Rng) -> ParamValue {
-        match distribution {
-            Distribution::Float(d) => {
-                let value = if d.log_scale {
-                    let log_low = d.low.ln();
-                    let log_high = d.high.ln();
-                    rng_util::f64_range(rng, log_low, log_high).exp()
-                } else if let Some(step) = d.step {
-                    #[allow(clippy::cast_possible_truncation)]
-                    let n_steps = ((d.high - d.low) / step).floor() as i64;
-                    let k = rng.i64(0..=n_steps);
-                    #[allow(clippy::cast_precision_loss)]
-                    let result = d.low + (k as f64) * step;
-                    result
-                } else {
-                    rng_util::f64_range(rng, d.low, d.high)
-                };
-                ParamValue::Float(value)
-            }
-            Distribution::Int(d) => {
-                #[allow(clippy::cast_precision_loss)]
-                let value = if d.log_scale {
-                    let log_low = (d.low as f64).ln();
-                    let log_high = (d.high as f64).ln();
-                    #[allow(clippy::cast_possible_truncation)]
-                    let raw = rng_util::f64_range(rng, log_low, log_high).exp().round() as i64;
-                    raw.clamp(d.low, d.high)
-                } else if let Some(step) = d.step {
-                    #[allow(clippy::cast_possible_truncation)]
-                    let n_steps = (d.high - d.low) / step;
-                    let k = rng.i64(0..=n_steps);
-                    d.low + k * step
-                } else {
-                    rng.i64(d.low..=d.high)
-                };
-                ParamValue::Int(value)
-            }
-            Distribution::Categorical(d) => {
-                let index = rng.usize(0..d.n_choices);
-                ParamValue::Categorical(index)
-            }
-        }
     }
 
     /// Samples parameters jointly using multivariate TPE.
@@ -1025,7 +980,7 @@ impl MultivariateTpeSampler {
             // Sample ungrouped parameters uniformly (no history for them)
             let mut rng = self.rng.lock();
             for (id, dist) in &ungrouped_params {
-                let value = Self::sample_uniform_single(dist, &mut rng);
+                let value = crate::sampler::common::sample_random(&mut rng, dist);
                 result.insert(*id, value);
             }
         }
@@ -1312,7 +1267,7 @@ impl MultivariateTpeSampler {
                     .collect();
 
                 if good_values.is_empty() || bad_values.is_empty() {
-                    return Self::sample_uniform_single(distribution, rng);
+                    return crate::sampler::common::sample_random(rng, distribution);
                 }
 
                 let value = self.sample_tpe_float(
@@ -1348,7 +1303,7 @@ impl MultivariateTpeSampler {
                     .collect();
 
                 if good_values.is_empty() || bad_values.is_empty() {
-                    return Self::sample_uniform_single(distribution, rng);
+                    return crate::sampler::common::sample_random(rng, distribution);
                 }
 
                 let value = self.sample_tpe_int(
@@ -1384,7 +1339,7 @@ impl MultivariateTpeSampler {
                     .collect();
 
                 if good_indices.is_empty() || bad_indices.is_empty() {
-                    return Self::sample_uniform_single(distribution, rng);
+                    return crate::sampler::common::sample_random(rng, distribution);
                 }
 
                 let idx =
@@ -1765,7 +1720,7 @@ impl Sampler for MultivariateTpeSampler {
         Self::find_matching_param(distribution, &joint_sample).unwrap_or_else(|| {
             // Fallback to uniform sampling if no match found
             let mut rng = self.rng.lock();
-            Self::sample_uniform_single(distribution, &mut rng)
+            crate::sampler::common::sample_random(&mut rng, distribution)
         })
     }
 }

@@ -406,42 +406,7 @@ pub(crate) fn polynomial_mutation_f64(
     (x + delta_q * range).clamp(low, high)
 }
 
-/// Random sampling for a single distribution.
-#[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
-pub(crate) fn sample_random(rng: &mut fastrand::Rng, distribution: &Distribution) -> ParamValue {
-    match distribution {
-        Distribution::Float(d) => {
-            let value = if d.log_scale {
-                let log_low = d.low.ln();
-                let log_high = d.high.ln();
-                rng_util::f64_range(rng, log_low, log_high).exp()
-            } else if let Some(step) = d.step {
-                let n_steps = ((d.high - d.low) / step).floor() as i64;
-                let k = rng.i64(0..=n_steps);
-                d.low + (k as f64) * step
-            } else {
-                rng_util::f64_range(rng, d.low, d.high)
-            };
-            ParamValue::Float(value)
-        }
-        Distribution::Int(d) => {
-            let value = if d.log_scale {
-                let log_low = (d.low as f64).ln();
-                let log_high = (d.high as f64).ln();
-                let raw = rng_util::f64_range(rng, log_low, log_high).exp().round() as i64;
-                raw.clamp(d.low, d.high)
-            } else if let Some(step) = d.step {
-                let n_steps = (d.high - d.low) / step;
-                let k = rng.i64(0..=n_steps);
-                d.low + k * step
-            } else {
-                rng.i64(d.low..=d.high)
-            };
-            ParamValue::Int(value)
-        }
-        Distribution::Categorical(d) => ParamValue::Categorical(rng.usize(0..d.n_choices)),
-    }
-}
+pub(crate) use super::common::sample_random;
 
 // ---------------------------------------------------------------------------
 // Das-Dennis reference point generation
