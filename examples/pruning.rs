@@ -55,13 +55,13 @@ fn main() -> optimizer::Result<()> {
     // --- Results ---
     let best = study.best_trial()?;
     println!(
-        "Completed {} trials ({} pruned)",
+        "Recorded {} trials ({} pruned)",
         study.n_trials(),
         study.n_pruned_trials()
     );
     println!("Best trial #{}: loss = {:.6}", best.id, best.value);
     println!("  learning_rate = {:.6}", best.get(&lr).unwrap());
-    println!("  momentum      = {:.4}", best.get(&momentum).unwrap());
+println!("  momentum      = {:.4}", best.get(&momentum).unwrap());
 
     Ok(())
 }
