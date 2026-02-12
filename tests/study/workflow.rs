@@ -259,6 +259,28 @@ fn test_completed_trial_get() {
 }
 
 #[test]
+fn test_completed_trial_get_type_mismatch_returns_none() {
+    let study: Study<f64> = Study::new(Direction::Minimize);
+    let int_param = IntParam::new(1, 10).name("x");
+
+    study
+        .optimize(1, |trial: &mut optimizer::Trial| {
+            let n = int_param.suggest(trial)?;
+            Ok::<_, Error>(n as f64)
+        })
+        .unwrap();
+
+    let best = study.best_trial().unwrap();
+
+    // The stored value is ParamValue::Int, but we query with a FloatParam.
+    let wrong_type = FloatParam::new(0.0, 100.0).name("x");
+    assert!(
+        best.get(&wrong_type).is_none(),
+        "type mismatch should return None, not panic"
+    );
+}
+
+#[test]
 fn test_single_value_int_range() {
     let param = IntParam::new(5, 5);
     let mut trial = optimizer::Trial::new(0);

@@ -121,13 +121,9 @@ impl<V> CompletedTrial<V> {
     /// Looks up the parameter by its unique id and casts the stored
     /// [`ParamValue`] to the parameter's typed value.
     ///
-    /// Returns `None` if the parameter was not used in this trial.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the stored value is incompatible with the parameter type
-    /// (e.g., a `Float` value stored for an `IntParam`). This indicates
-    /// a bug in the program, not a runtime error.
+    /// Returns `None` if the parameter was not used in this trial or if
+    /// the stored value is incompatible with the parameter type (e.g., a
+    /// `Float` value stored for an `IntParam`).
     ///
     /// # Examples
     ///
@@ -150,11 +146,9 @@ impl<V> CompletedTrial<V> {
     /// assert!((-10.0..=10.0).contains(&x_val));
     /// ```
     pub fn get<P: Parameter>(&self, param: &P) -> Option<P::Value> {
-        self.params.get(&param.id()).map(|v| {
-            param
-                .cast_param_value(v)
-                .expect("parameter type mismatch: stored value incompatible with parameter")
-        })
+        self.params
+            .get(&param.id())
+            .and_then(|v| param.cast_param_value(v).ok())
     }
 
     /// Returns `true` if all constraints are satisfied (values <= 0.0).
