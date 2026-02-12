@@ -94,3 +94,8 @@ gh pr create --title "<title>" --base <target-branch> --body "$(cat <<'EOF'
 EOF
 )"
 ```
+
+## Before you commit
+
+1. Run `cargo +nightly fmt --all && cargo +nightly clippy --all-features --all-targets --fix --allow-dirty` to auto-format and fix lint issues.
+2. Run all tests and doctests to ensure nothing is broken.
