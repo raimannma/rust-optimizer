@@ -1,8 +1,12 @@
+#[cfg(feature = "serde")]
 use std::collections::HashMap;
 
+#[cfg(feature = "serde")]
 use crate::sampler::CompletedTrial;
+#[cfg(feature = "serde")]
 use crate::types::Direction;
 
+#[cfg(feature = "serde")]
 use super::Study;
 
 /// A serializable snapshot of a study's state.
