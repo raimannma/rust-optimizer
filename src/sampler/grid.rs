@@ -601,7 +601,7 @@ impl Sampler for GridSampler {
         // Check if all points have been exhausted
         assert!(
             cached.current_index < cached.points.len(),
-            "GridSearchSampler: all grid points exhausted"
+            "GridSampler: all grid points exhausted"
         );
 
         // Get the current grid point and advance the index
@@ -908,7 +908,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "GridSearchSampler: all grid points exhausted")]
+    #[should_panic(expected = "GridSampler: all grid points exhausted")]
     fn test_sampler_panics_after_exhaustion() {
         let sampler = GridSampler::new();
         let dist = Distribution::Categorical(CategoricalDistribution { n_choices: 2 });

@@ -171,6 +171,8 @@ where
         use tokio::sync::Semaphore;
         use tokio::task::JoinSet;
 
+        assert!(concurrency > 0, "concurrency must be at least 1");
+
         #[cfg(feature = "tracing")]
         let _span = tracing::info_span!("optimize_parallel", n_trials, concurrency, direction = ?self.direction).entered();
 

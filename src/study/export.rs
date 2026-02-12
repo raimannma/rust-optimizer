@@ -91,7 +91,7 @@ where
         for trial in trials.iter() {
             write!(writer, "{}", trial.id)?;
 
-            // Value: empty for pruned trials.
+            // Value: empty for non-complete trials.
             if trial.state == TrialState::Complete {
                 write!(writer, ",{}", trial.value)?;
             } else {
