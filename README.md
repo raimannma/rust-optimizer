@@ -52,11 +52,15 @@ println!("Best x = {:.4}, f(x) = {:.4}", best.get(&x).unwrap(), best.value);
 ## Examples
 
 ```sh
-cargo run --example basic_optimization          # Minimize a quadratic — simplest possible usage
-cargo run --example sampler_comparison          # Compare Random, TPE, and Grid on the same problem
-cargo run --example pruning_and_callbacks       # Trial pruning with MedianPruner + early stopping
-cargo run --example parameter_types --features derive       # All 5 param types + #[derive(Categorical)]
-cargo run --example advanced_features --features async,journal  # Async, journal storage, ask-and-tell, multi-objective
+cargo run --example basic_optimization                       # Minimize a quadratic — simplest possible usage
+cargo run --example parameter_types --features derive        # All 5 param types + #[derive(Categorical)]
+cargo run --example sampler_comparison                       # Compare Random, TPE, and Grid on the same problem
+cargo run --example pruning                                  # Trial pruning with MedianPruner
+cargo run --example early_stopping                           # Halt a study when a target is reached
+cargo run --example async_parallel --features async          # Evaluate trials concurrently with tokio
+cargo run --example journal_storage --features journal       # Persist trials to disk and resume later
+cargo run --example ask_and_tell                             # Decouple sampling from evaluation
+cargo run --example multi_objective                          # Optimize competing objectives + Pareto front
 ```
 
 ## Learn More

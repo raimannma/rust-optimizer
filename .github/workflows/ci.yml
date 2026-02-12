@@ -66,14 +66,22 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Run basic_optimization
         run: cargo run --example basic_optimization
-      - name: Run sampler_comparison
-        run: cargo run --example sampler_comparison
-      - name: Run pruning_and_callbacks
-        run: cargo run --example pruning_and_callbacks
       - name: Run parameter_types
         run: cargo run --example parameter_types --features derive
-      - name: Run advanced_features
-        run: cargo run --example advanced_features --features "async,journal"
+      - name: Run sampler_comparison
+        run: cargo run --example sampler_comparison
+      - name: Run pruning
+        run: cargo run --example pruning
+      - name: Run early_stopping
+        run: cargo run --example early_stopping
+      - name: Run async_parallel
+        run: cargo run --example async_parallel --features async
+      - name: Run journal_storage
+        run: cargo run --example journal_storage --features journal
+      - name: Run ask_and_tell
+        run: cargo run --example ask_and_tell
+      - name: Run multi_objective
+        run: cargo run --example multi_objective
 
   docs:
     name: Docs

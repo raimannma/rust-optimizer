@@ -67,13 +67,30 @@ name = "sampler_comparison"
 path = "examples/sampler_comparison.rs"
 
 [[example]]
-name = "pruning_and_callbacks"
-path = "examples/pruning_and_callbacks.rs"
+name = "pruning"
+path = "examples/pruning.rs"
 
 [[example]]
-name = "advanced_features"
-path = "examples/advanced_features.rs"
-required-features = ["async", "journal"]
+name = "early_stopping"
+path = "examples/early_stopping.rs"
+
+[[example]]
+name = "async_parallel"
+path = "examples/async_parallel.rs"
+required-features = ["async"]
+
+[[example]]
+name = "journal_storage"
+path = "examples/journal_storage.rs"
+required-features = ["journal"]
+
+[[example]]
+name = "ask_and_tell"
+path = "examples/ask_and_tell.rs"
+
+[[example]]
+name = "multi_objective"
+path = "examples/multi_objective.rs"
 
 [[test]]
 name = "journal_tests"

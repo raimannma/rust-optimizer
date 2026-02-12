@@ -40,10 +40,7 @@ fn run_study(study: Study<f64>, n_trials: usize) -> f64 {
 
 fn main() {
     let n_trials: usize = 100;
-    println!("Comparing samplers on Sphere(x, y) = x² + y²");
-    println!("  Search space: x ∈ [-5, 5], y ∈ [-3, 3]");
-    println!("  Known minimum: f(0, 0) = 0");
-    println!("  Trials per sampler: {n_trials}");
+    println!("Comparing samplers on Sphere(x, y) = x² + y²  ({n_trials} trials each)");
     println!();
 
     // --- Random sampler (baseline) ---
@@ -78,17 +75,4 @@ fn main() {
     println!("  Random : {random_best:.6}");
     println!("  TPE    : {tpe_best:.6}");
     println!("  Grid   : {grid_best:.6}");
-    println!();
-
-    // Find the winner
-    let results = [
-        ("Random", random_best),
-        ("TPE", tpe_best),
-        ("Grid", grid_best),
-    ];
-    let (winner, _) = results
-        .iter()
-        .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
-        .unwrap();
-    println!("Winner: {winner} (closest to known minimum of 0.0)");
 }
