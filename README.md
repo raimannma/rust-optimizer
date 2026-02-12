@@ -33,7 +33,7 @@ println!("Best x = {:.4}, f(x) = {:.4}", best.get(&x).unwrap(), best.value);
 - **[Multi-objective](https://docs.rs/optimizer/latest/optimizer/multi_objective/)** — Pareto front extraction with NSGA-II/III and MOEA/D
 - **[Async & parallel](https://docs.rs/optimizer/latest/optimizer/struct.Study.html#method.optimize_parallel)** — Concurrent trial evaluation with Tokio
 - **[Storage backends](https://docs.rs/optimizer/latest/optimizer/storage/)** — In-memory (default) or JSONL journal for persistence and resumption
-- **[Visualization](https://docs.rs/optimizer/latest/optimizer/fn.generate_html_report.html)** — HTML reports with optimization history, parameter importance, and Pareto fronts
+- **[Visualization](https://docs.rs/optimizer/latest/optimizer/fn.generate_html_report.html)** — HTML reports with optimization history and parameter importance
 - **[Analysis](https://docs.rs/optimizer/latest/optimizer/struct.Study.html#method.fanova)** — fANOVA and Spearman correlation for parameter importance
 
 ## Feature Flags
