@@ -22,10 +22,10 @@ use std::collections::HashMap;
 pub use bohb::BohbSampler;
 #[cfg(feature = "cma-es")]
 pub use cma_es::CmaEsSampler;
-pub use de::{DifferentialEvolutionSampler, DifferentialEvolutionStrategy};
+pub use de::{DESampler, DEStrategy};
 #[cfg(feature = "gp")]
 pub use gp::GpSampler;
-pub use grid::GridSearchSampler;
+pub use grid::GridSampler;
 pub use moead::{Decomposition, MoeadSampler};
 pub use motpe::MotpeSampler;
 pub use nsga2::Nsga2Sampler;

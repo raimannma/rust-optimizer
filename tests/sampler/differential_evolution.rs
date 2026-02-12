@@ -1,9 +1,9 @@
 use optimizer::prelude::*;
-use optimizer::sampler::de::{DifferentialEvolutionSampler, DifferentialEvolutionStrategy};
+use optimizer::sampler::de::{DESampler, DEStrategy};
 
 #[test]
 fn sphere_function() {
-    let sampler = DifferentialEvolutionSampler::with_seed(42);
+    let sampler = DESampler::with_seed(42);
     let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
 
     let x = FloatParam::new(-5.0, 5.0).name("x");
@@ -27,10 +27,7 @@ fn sphere_function() {
 
 #[test]
 fn rosenbrock_function() {
-    let sampler = DifferentialEvolutionSampler::builder()
-        .population_size(20)
-        .seed(42)
-        .build();
+    let sampler = DESampler::builder().population_size(20).seed(42).build();
     let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
 
     let x = FloatParam::new(-5.0, 5.0).name("x");
@@ -55,7 +52,7 @@ fn rosenbrock_function() {
 
 #[test]
 fn rastrigin_function() {
-    let sampler = DifferentialEvolutionSampler::builder()
+    let sampler = DESampler::builder()
         .population_size(30)
         .mutation_factor(0.7)
         .crossover_rate(0.9)
@@ -88,7 +85,7 @@ fn rastrigin_function() {
 
 #[test]
 fn bounds_respected() {
-    let sampler = DifferentialEvolutionSampler::with_seed(123);
+    let sampler = DESampler::with_seed(123);
     let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
 
     let x = FloatParam::new(-2.0, 3.0).name("x");
@@ -112,8 +109,8 @@ fn bounds_respected() {
 
 #[test]
 fn strategy_best1() {
-    let sampler = DifferentialEvolutionSampler::builder()
-        .strategy(DifferentialEvolutionStrategy::Best1)
+    let sampler = DESampler::builder()
+        .strategy(DEStrategy::Best1)
         .population_size(15)
         .seed(42)
         .build();
@@ -140,8 +137,8 @@ fn strategy_best1() {
 
 #[test]
 fn strategy_current_to_best1() {
-    let sampler = DifferentialEvolutionSampler::builder()
-        .strategy(DifferentialEvolutionStrategy::CurrentToBest1)
+    let sampler = DESampler::builder()
+        .strategy(DEStrategy::CurrentToBest1)
         .population_size(15)
         .seed(42)
         .build();
@@ -168,7 +165,7 @@ fn strategy_current_to_best1() {
 
 #[test]
 fn mixed_params_float_and_categorical() {
-    let sampler = DifferentialEvolutionSampler::with_seed(42);
+    let sampler = DESampler::with_seed(42);
     let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
 
     let x = FloatParam::new(-5.0, 5.0).name("x");
@@ -201,7 +198,7 @@ fn seeded_reproducibility() {
     let y = FloatParam::new(-5.0, 5.0).name("y");
 
     let run = |seed: u64| {
-        let sampler = DifferentialEvolutionSampler::with_seed(seed);
+        let sampler = DESampler::with_seed(seed);
         let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
         study
             .optimize(50, |trial: &mut optimizer::Trial| {
@@ -224,7 +221,7 @@ fn different_seeds_different_results() {
     let y = FloatParam::new(-5.0, 5.0).name("y");
 
     let run = |seed: u64| {
-        let sampler = DifferentialEvolutionSampler::with_seed(seed);
+        let sampler = DESampler::with_seed(seed);
         let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
         study
             .optimize(20, |trial: &mut optimizer::Trial| {
@@ -246,7 +243,7 @@ fn different_seeds_different_results() {
 
 #[test]
 fn single_dimension() {
-    let sampler = DifferentialEvolutionSampler::with_seed(42);
+    let sampler = DESampler::with_seed(42);
     let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
 
     let x = FloatParam::new(-10.0, 10.0).name("x");
@@ -268,7 +265,7 @@ fn single_dimension() {
 
 #[test]
 fn integer_params() {
-    let sampler = DifferentialEvolutionSampler::with_seed(42);
+    let sampler = DESampler::with_seed(42);
     let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
 
     let n = IntParam::new(1, 20).name("n");
@@ -296,7 +293,7 @@ fn integer_params() {
 
 #[test]
 fn log_scale_params() {
-    let sampler = DifferentialEvolutionSampler::with_seed(42);
+    let sampler = DESampler::with_seed(42);
     let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
 
     let lr = FloatParam::new(1e-5, 1.0).log_scale().name("lr");
@@ -320,7 +317,7 @@ fn log_scale_params() {
 
 #[test]
 fn custom_mutation_and_crossover() {
-    let sampler = DifferentialEvolutionSampler::builder()
+    let sampler = DESampler::builder()
         .mutation_factor(0.5)
         .crossover_rate(0.7)
         .population_size(10)

@@ -54,11 +54,11 @@
 //! |---------|-----------|----------|--------------|
 //! | [`RandomSampler`](sampler::RandomSampler) | Uniform random | Baselines, high-dimensional | — |
 //! | [`TpeSampler`](sampler::TpeSampler) | Tree-Parzen Estimator | General-purpose Bayesian | — |
-//! | [`GridSearchSampler`](sampler::GridSearchSampler) | Exhaustive grid | Small, discrete spaces | — |
+//! | [`GridSearchSampler`](sampler::GridSampler) | Exhaustive grid | Small, discrete spaces | — |
 //! | [`SobolSampler`](sampler::SobolSampler) | Sobol quasi-random sequence | Space-filling, low dimensions | `sobol` |
 //! | [`CmaEsSampler`](sampler::CmaEsSampler) | CMA-ES | Continuous, moderate dimensions | `cma-es` |
 //! | [`GpSampler`](sampler::GpSampler) | Gaussian Process + EI | Expensive objectives, few trials | `gp` |
-//! | [`DifferentialEvolutionSampler`](sampler::DifferentialEvolutionSampler) | Differential Evolution | Non-convex, population-based | — |
+//! | [`DESampler`](sampler::DESampler) | Differential Evolution | Non-convex, population-based | — |
 //! | [`BohbSampler`](sampler::BohbSampler) | BOHB (TPE + `HyperBand`) | Budget-aware early stopping | — |
 //!
 //! ## Multi-objective samplers
@@ -168,9 +168,8 @@ pub mod prelude {
     #[cfg(feature = "sobol")]
     pub use crate::sampler::SobolSampler;
     pub use crate::sampler::{
-        BohbSampler, CompletedTrial, Decomposition, DifferentialEvolutionSampler,
-        DifferentialEvolutionStrategy, GridSearchSampler, MoeadSampler, MotpeSampler, Nsga2Sampler,
-        Nsga3Sampler, RandomSampler, TpeSampler,
+        BohbSampler, CompletedTrial, DESampler, DEStrategy, Decomposition, GridSampler,
+        MoeadSampler, MotpeSampler, Nsga2Sampler, Nsga3Sampler, RandomSampler, TpeSampler,
     };
     #[cfg(feature = "journal")]
     pub use crate::storage::JournalStorage;

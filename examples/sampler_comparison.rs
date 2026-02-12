@@ -65,7 +65,7 @@ fn main() {
     // Evaluates evenly spaced grid points. Each parameter gets its own grid that
     // is sampled in order, so n_points_per_param must be >= n_trials.
     println!("\n3. Grid sampler (exhaustive):");
-    let grid = GridSearchSampler::builder()
+    let grid = GridSampler::builder()
         .n_points_per_param(n_trials) // one grid point per trial per parameter
         .build();
     let grid_best = run_study(Study::minimize(grid), n_trials);

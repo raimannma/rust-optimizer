@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use optimizer::parameter::{FloatParam, Parameter};
-use optimizer::sampler::grid::GridSearchSampler;
+use optimizer::sampler::grid::GridSampler;
 use optimizer::sampler::random::RandomSampler;
 use optimizer::sampler::tpe::TpeSampler;
 use optimizer::sampler::{CompletedTrial, Sampler};
@@ -97,7 +97,7 @@ fn bench_grid_sample(c: &mut Criterion) {
             |b, _| {
                 b.iter(|| {
                     // Fresh sampler each iteration since grid tracks used points
-                    let sampler = GridSearchSampler::builder()
+                    let sampler = GridSampler::builder()
                         .n_points_per_param(grid_points)
                         .build();
                     sampler.sample(&dist, 0, &history)

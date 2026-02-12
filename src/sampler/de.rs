@@ -10,7 +10,7 @@
 //!
 //! Each generation, for every population member *xᵢ*:
 //! 1. **Mutation** — create a mutant vector *v* from other population
-//!    members using the selected [`DifferentialEvolutionStrategy`]:
+//!    members using the selected [`DEStrategy`]:
 //!    - `Rand1`:  `v = x_r1 + F * (x_r2 - x_r3)`
 //!    - `Best1`:  `v = x_best + F * (x_r1 - x_r2)`
 //!    - `CurrentToBest1`:  `v = x_i + F * (x_best - x_i) + F * (x_r1 - x_r2)`
@@ -40,20 +40,20 @@
 //! | `population_size` | `max(10n, 15)` | Candidates per generation |
 //! | `mutation_factor` (F) | 0.8 | Differential amplification — higher = more exploration |
 //! | `crossover_rate` (CR) | 0.9 | Probability of taking a dimension from the mutant |
-//! | `strategy` | `Rand1` | Mutation strategy (see [`DifferentialEvolutionStrategy`]) |
+//! | `strategy` | `Rand1` | Mutation strategy (see [`DEStrategy`]) |
 //! | `seed` | random | RNG seed for reproducibility |
 //!
 //! # Examples
 //!
 //! ```
-//! use optimizer::sampler::de::{DifferentialEvolutionSampler, DifferentialEvolutionStrategy};
+//! use optimizer::sampler::de::{DESampler, DEStrategy};
 //! use optimizer::{Direction, Study};
 //!
 //! // Minimize with DE using the Best1 strategy for faster convergence
-//! let sampler = DifferentialEvolutionSampler::builder()
+//! let sampler = DESampler::builder()
 //!     .mutation_factor(0.7)
 //!     .crossover_rate(0.9)
-//!     .strategy(DifferentialEvolutionStrategy::Best1)
+//!     .strategy(DEStrategy::Best1)
 //!     .population_size(20)
 //!     .seed(42)
 //!     .build();
@@ -74,7 +74,7 @@ use crate::sampler::{CompletedTrial, Sampler};
 ///
 /// Controls how mutant vectors are created from the current population.
 #[derive(Clone, Copy, Debug, Default)]
-pub enum DifferentialEvolutionStrategy {
+pub enum DEStrategy {
     /// DE/rand/1: `v = x_r1 + F * (x_r2 - x_r3)`
     ///
     /// The most robust strategy. Uses three random population members.
@@ -99,46 +99,36 @@ pub enum DifferentialEvolutionStrategy {
 /// # Examples
 ///
 /// ```
-/// use optimizer::sampler::de::DifferentialEvolutionSampler;
+/// use optimizer::sampler::de::DESampler;
 /// use optimizer::{Direction, Study};
 ///
 /// // Default configuration
-/// let study: Study<f64> =
-///     Study::with_sampler(Direction::Minimize, DifferentialEvolutionSampler::new());
+/// let study: Study<f64> = Study::with_sampler(Direction::Minimize, DESampler::new());
 ///
 /// // With seed for reproducibility
-/// let study: Study<f64> = Study::with_sampler(
-///     Direction::Minimize,
-///     DifferentialEvolutionSampler::with_seed(42),
-/// );
+/// let study: Study<f64> = Study::with_sampler(Direction::Minimize, DESampler::with_seed(42));
 ///
 /// // Custom configuration via builder
-/// use optimizer::sampler::de::DifferentialEvolutionStrategy;
-/// let sampler = DifferentialEvolutionSampler::builder()
+/// use optimizer::sampler::de::DEStrategy;
+/// let sampler = DESampler::builder()
 ///     .mutation_factor(0.8)
 ///     .crossover_rate(0.9)
-///     .strategy(DifferentialEvolutionStrategy::Best1)
+///     .strategy(DEStrategy::Best1)
 ///     .population_size(30)
 ///     .seed(42)
 ///     .build();
 /// let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
 /// ```
-pub struct DifferentialEvolutionSampler {
+pub struct DESampler {
     state: Mutex<State>,
 }
 
-impl DifferentialEvolutionSampler {
+impl DESampler {
     /// Creates a new DE sampler with default settings and a random seed.
     #[must_use]
     pub fn new() -> Self {
         Self {
-            state: Mutex::new(State::new(
-                None,
-                0.8,
-                0.9,
-                DifferentialEvolutionStrategy::Rand1,
-                None,
-            )),
+            state: Mutex::new(State::new(None, 0.8, 0.9, DEStrategy::Rand1, None)),
         }
     }
 
@@ -146,30 +136,24 @@ impl DifferentialEvolutionSampler {
     #[must_use]
     pub fn with_seed(seed: u64) -> Self {
         Self {
-            state: Mutex::new(State::new(
-                None,
-                0.8,
-                0.9,
-                DifferentialEvolutionStrategy::Rand1,
-                Some(seed),
-            )),
+            state: Mutex::new(State::new(None, 0.8, 0.9, DEStrategy::Rand1, Some(seed))),
         }
     }
 
-    /// Creates a builder for configuring a `DifferentialEvolutionSampler`.
+    /// Creates a builder for configuring a `DESampler`.
     #[must_use]
-    pub fn builder() -> DifferentialEvolutionSamplerBuilder {
-        DifferentialEvolutionSamplerBuilder::new()
+    pub fn builder() -> DESamplerBuilder {
+        DESamplerBuilder::new()
     }
 }
 
-impl Default for DifferentialEvolutionSampler {
+impl Default for DESampler {
     fn default() -> Self {
         Self::new()
     }
 }
 
-/// Builder for configuring a [`DifferentialEvolutionSampler`].
+/// Builder for configuring a [`DESampler`].
 ///
 /// All options have sensible defaults:
 /// - `population_size`: `max(10 * n_dims, 15)` (auto-computed from parameter count)
@@ -181,34 +165,32 @@ impl Default for DifferentialEvolutionSampler {
 /// # Examples
 ///
 /// ```
-/// use optimizer::sampler::de::{
-///     DifferentialEvolutionSamplerBuilder, DifferentialEvolutionStrategy,
-/// };
+/// use optimizer::sampler::de::{DESamplerBuilder, DEStrategy};
 ///
-/// let sampler = DifferentialEvolutionSamplerBuilder::new()
+/// let sampler = DESamplerBuilder::new()
 ///     .mutation_factor(0.5)
 ///     .crossover_rate(0.7)
-///     .strategy(DifferentialEvolutionStrategy::CurrentToBest1)
+///     .strategy(DEStrategy::CurrentToBest1)
 ///     .population_size(20)
 ///     .seed(42)
 ///     .build();
 /// ```
 #[derive(Debug, Clone)]
-pub struct DifferentialEvolutionSamplerBuilder {
+pub struct DESamplerBuilder {
     population_size: Option<usize>,
     mutation_factor: f64,
     crossover_rate: f64,
-    strategy: DifferentialEvolutionStrategy,
+    strategy: DEStrategy,
     seed: Option<u64>,
 }
 
-impl Default for DifferentialEvolutionSamplerBuilder {
+impl Default for DESamplerBuilder {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl DifferentialEvolutionSamplerBuilder {
+impl DESamplerBuilder {
     /// Creates a new builder with default settings.
     #[must_use]
     pub fn new() -> Self {
@@ -216,7 +198,7 @@ impl DifferentialEvolutionSamplerBuilder {
             population_size: None,
             mutation_factor: 0.8,
             crossover_rate: 0.9,
-            strategy: DifferentialEvolutionStrategy::Rand1,
+            strategy: DEStrategy::Rand1,
             seed: None,
         }
     }
@@ -261,9 +243,9 @@ impl DifferentialEvolutionSamplerBuilder {
 
     /// Sets the mutation strategy.
     ///
-    /// Default: [`DifferentialEvolutionStrategy::Rand1`].
+    /// Default: [`DEStrategy::Rand1`].
     #[must_use]
-    pub fn strategy(mut self, strategy: DifferentialEvolutionStrategy) -> Self {
+    pub fn strategy(mut self, strategy: DEStrategy) -> Self {
         self.strategy = strategy;
         self
     }
@@ -275,10 +257,10 @@ impl DifferentialEvolutionSamplerBuilder {
         self
     }
 
-    /// Builds the configured [`DifferentialEvolutionSampler`].
+    /// Builds the configured [`DESampler`].
     #[must_use]
-    pub fn build(self) -> DifferentialEvolutionSampler {
-        DifferentialEvolutionSampler {
+    pub fn build(self) -> DESampler {
+        DESampler {
             state: Mutex::new(State::new(
                 self.population_size,
                 self.mutation_factor,
@@ -345,7 +327,7 @@ struct State {
     /// Crossover rate (CR).
     crossover_rate: f64,
     /// Mutation strategy.
-    strategy: DifferentialEvolutionStrategy,
+    strategy: DEStrategy,
     /// Current phase.
     phase: Phase,
     /// Discovered dimension info (populated during discovery).
@@ -383,7 +365,7 @@ impl State {
         user_population_size: Option<usize>,
         mutation_factor: f64,
         crossover_rate: f64,
-        strategy: DifferentialEvolutionStrategy,
+        strategy: DEStrategy,
         seed: Option<u64>,
     ) -> Self {
         let rng = seed.map_or_else(fastrand::Rng::new, fastrand::Rng::with_seed);
@@ -601,21 +583,21 @@ fn create_mutant_with_rng(state: &mut State, target_idx: usize, n_continuous: us
     let pop_size = state.population_size;
 
     match state.strategy {
-        DifferentialEvolutionStrategy::Rand1 => {
+        DEStrategy::Rand1 => {
             let indices = select_random_indices(&mut state.rng, pop_size, 3, &[target_idx]);
             let (r1, r2, r3) = (indices[0], indices[1], indices[2]);
             (0..n_continuous)
                 .map(|j| pop[r1][j] + f * (pop[r2][j] - pop[r3][j]))
                 .collect()
         }
-        DifferentialEvolutionStrategy::Best1 => {
+        DEStrategy::Best1 => {
             let indices = select_random_indices(&mut state.rng, pop_size, 2, &[target_idx]);
             let (r1, r2) = (indices[0], indices[1]);
             (0..n_continuous)
                 .map(|j| pop[best_idx][j] + f * (pop[r1][j] - pop[r2][j]))
                 .collect()
         }
-        DifferentialEvolutionStrategy::CurrentToBest1 => {
+        DEStrategy::CurrentToBest1 => {
             let indices = select_random_indices(&mut state.rng, pop_size, 2, &[target_idx]);
             let (r1, r2) = (indices[0], indices[1]);
             (0..n_continuous)
@@ -693,7 +675,7 @@ fn generate_initial_population(state: &mut State) -> Vec<Candidate> {
 // Sampler trait implementation
 // ---------------------------------------------------------------------------
 
-impl Sampler for DifferentialEvolutionSampler {
+impl Sampler for DESampler {
     #[allow(clippy::cast_precision_loss)]
     fn sample(
         &self,
@@ -968,7 +950,7 @@ mod tests {
 
     #[test]
     fn test_de_sampler_basic_float() {
-        let sampler = DifferentialEvolutionSampler::with_seed(42);
+        let sampler = DESampler::with_seed(42);
         let dist = Distribution::Float(FloatDistribution {
             low: -5.0,
             high: 5.0,
@@ -1000,7 +982,7 @@ mod tests {
         });
 
         let sample_values = |seed: u64| {
-            let sampler = DifferentialEvolutionSampler::with_seed(seed);
+            let sampler = DESampler::with_seed(seed);
             (0..20)
                 .map(|i| sampler.sample(&dist, i, &[]))
                 .collect::<Vec<_>>()
@@ -1016,22 +998,16 @@ mod tests {
 
     #[test]
     fn test_de_strategy_default() {
-        assert!(matches!(
-            DifferentialEvolutionStrategy::default(),
-            DifferentialEvolutionStrategy::Rand1
-        ));
+        assert!(matches!(DEStrategy::default(), DEStrategy::Rand1));
     }
 
     #[test]
     fn test_builder_defaults() {
-        let builder = DifferentialEvolutionSamplerBuilder::new();
+        let builder = DESamplerBuilder::new();
         assert!(builder.population_size.is_none());
         assert!((builder.mutation_factor - 0.8).abs() < f64::EPSILON);
         assert!((builder.crossover_rate - 0.9).abs() < f64::EPSILON);
-        assert!(matches!(
-            builder.strategy,
-            DifferentialEvolutionStrategy::Rand1
-        ));
+        assert!(matches!(builder.strategy, DEStrategy::Rand1));
         assert!(builder.seed.is_none());
     }
 }

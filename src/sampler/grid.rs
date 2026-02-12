@@ -1,6 +1,6 @@
 //! Grid search sampler — exhaustive evaluation of discretized parameter spaces.
 //!
-//! [`GridSearchSampler`] divides each parameter range into a fixed number of
+//! [`GridSampler`] divides each parameter range into a fixed number of
 //! evenly spaced points (or uses the explicit step size when defined) and
 //! evaluates them sequentially. This guarantees complete coverage of the
 //! search grid at the cost of scaling exponentially with the number of
@@ -29,9 +29,9 @@
 //!
 //! ```
 //! use optimizer::prelude::*;
-//! use optimizer::sampler::grid::GridSearchSampler;
+//! use optimizer::sampler::grid::GridSampler;
 //!
-//! let sampler = GridSearchSampler::builder().n_points_per_param(5).build();
+//! let sampler = GridSampler::builder().n_points_per_param(5).build();
 //! let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
 //! ```
 
@@ -353,22 +353,22 @@ struct GridState {
 /// # Examples
 ///
 /// ```
-/// use optimizer::sampler::grid::GridSearchSampler;
+/// use optimizer::sampler::grid::GridSampler;
 ///
 /// // Default: 10 points per parameter
-/// let sampler = GridSearchSampler::new();
+/// let sampler = GridSampler::new();
 ///
 /// // Custom grid density
-/// let sampler = GridSearchSampler::builder().n_points_per_param(20).build();
+/// let sampler = GridSampler::builder().n_points_per_param(20).build();
 /// ```
-pub struct GridSearchSampler {
+pub struct GridSampler {
     /// Number of grid points per parameter (used when auto-discretizing).
     n_points_per_param: usize,
     /// Thread-safe internal state for tracking grid positions.
     state: Mutex<GridState>,
 }
 
-impl GridSearchSampler {
+impl GridSampler {
     /// Creates a new grid search sampler with default settings.
     ///
     /// Default settings:
@@ -386,9 +386,9 @@ impl GridSearchSampler {
     /// # Examples
     ///
     /// ```
-    /// use optimizer::sampler::grid::GridSearchSampler;
+    /// use optimizer::sampler::grid::GridSampler;
     ///
-    /// let sampler = GridSearchSampler::builder().n_points_per_param(20).build();
+    /// let sampler = GridSampler::builder().n_points_per_param(20).build();
     /// ```
     #[must_use]
     pub fn builder() -> GridSearchSamplerBuilder {
@@ -396,13 +396,13 @@ impl GridSearchSampler {
     }
 }
 
-impl Default for GridSearchSampler {
+impl Default for GridSampler {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl GridSearchSampler {
+impl GridSampler {
     /// Returns `true` if all grid points for all tracked distributions have been sampled.
     ///
     /// A distribution is considered exhausted when its `current_index` equals the number
@@ -416,9 +416,9 @@ impl GridSearchSampler {
     /// # Examples
     ///
     /// ```
-    /// use optimizer::sampler::grid::GridSearchSampler;
+    /// use optimizer::sampler::grid::GridSampler;
     ///
-    /// let sampler = GridSearchSampler::new();
+    /// let sampler = GridSampler::new();
     /// // Initially exhausted (no distributions tracked yet)
     /// assert!(sampler.is_exhausted());
     /// ```
@@ -446,9 +446,9 @@ impl GridSearchSampler {
     /// # Examples
     ///
     /// ```
-    /// use optimizer::sampler::grid::GridSearchSampler;
+    /// use optimizer::sampler::grid::GridSampler;
     ///
-    /// let sampler = GridSearchSampler::new();
+    /// let sampler = GridSampler::new();
     /// // No distributions tracked yet
     /// assert_eq!(sampler.grid_size(), 0);
     /// ```
@@ -459,7 +459,7 @@ impl GridSearchSampler {
     }
 }
 
-/// Builder for configuring a [`GridSearchSampler`].
+/// Builder for configuring a [`GridSampler`].
 ///
 /// # Examples
 ///
@@ -511,7 +511,7 @@ impl GridSearchSamplerBuilder {
         self
     }
 
-    /// Builds the configured [`GridSearchSampler`].
+    /// Builds the configured [`GridSampler`].
     ///
     /// # Examples
     ///
@@ -523,8 +523,8 @@ impl GridSearchSamplerBuilder {
     ///     .build();
     /// ```
     #[must_use]
-    pub fn build(self) -> GridSearchSampler {
-        GridSearchSampler {
+    pub fn build(self) -> GridSampler {
+        GridSampler {
             n_points_per_param: self.n_points_per_param,
             state: Mutex::new(GridState::default()),
         }
@@ -566,7 +566,7 @@ fn distribution_key(dist: &Distribution) -> String {
     }
 }
 
-impl Sampler for GridSearchSampler {
+impl Sampler for GridSampler {
     fn sample(
         &self,
         distribution: &Distribution,
@@ -876,7 +876,7 @@ mod tests {
 
     #[test]
     fn test_sampler_exhausts_after_expected_samples() {
-        let sampler = GridSearchSampler::new();
+        let sampler = GridSampler::new();
         let dist = Distribution::Categorical(CategoricalDistribution { n_choices: 3 });
 
         // Sample all 3 points
@@ -890,7 +890,7 @@ mod tests {
 
     #[test]
     fn test_sampler_exhaustion_with_int_distribution() {
-        let sampler = GridSearchSampler::builder().n_points_per_param(5).build();
+        let sampler = GridSampler::builder().n_points_per_param(5).build();
         let dist = Distribution::Int(IntDistribution {
             low: 0,
             high: 100,
@@ -910,7 +910,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "GridSearchSampler: all grid points exhausted")]
     fn test_sampler_panics_after_exhaustion() {
-        let sampler = GridSearchSampler::new();
+        let sampler = GridSampler::new();
         let dist = Distribution::Categorical(CategoricalDistribution { n_choices: 2 });
 
         // Sample all 2 points
@@ -925,14 +925,14 @@ mod tests {
 
     #[test]
     fn test_is_exhausted_before_sampling() {
-        let sampler = GridSearchSampler::new();
+        let sampler = GridSampler::new();
         // Newly created sampler is vacuously exhausted (no distributions tracked)
         assert!(sampler.is_exhausted());
     }
 
     #[test]
     fn test_is_exhausted_during_sampling() {
-        let sampler = GridSearchSampler::new();
+        let sampler = GridSampler::new();
         let dist = Distribution::Categorical(CategoricalDistribution { n_choices: 3 });
 
         // After first sample, not exhausted
@@ -950,7 +950,7 @@ mod tests {
 
     #[test]
     fn test_is_exhausted_multiple_distributions() {
-        let sampler = GridSearchSampler::new();
+        let sampler = GridSampler::new();
         // Use different n_choices so they have different distribution keys
         let dist1 = Distribution::Categorical(CategoricalDistribution { n_choices: 2 });
         let dist2 = Distribution::Categorical(CategoricalDistribution { n_choices: 3 });
@@ -976,7 +976,7 @@ mod tests {
 
     #[test]
     fn test_builder_default() {
-        let sampler = GridSearchSampler::builder().build();
+        let sampler = GridSampler::builder().build();
         let dist = Distribution::Float(FloatDistribution {
             low: 0.0,
             high: 1.0,
@@ -993,7 +993,7 @@ mod tests {
 
     #[test]
     fn test_builder_custom_n_points() {
-        let sampler = GridSearchSampler::builder().n_points_per_param(3).build();
+        let sampler = GridSampler::builder().n_points_per_param(3).build();
         let dist = Distribution::Float(FloatDistribution {
             low: 0.0,
             high: 1.0,
@@ -1011,7 +1011,7 @@ mod tests {
 
     #[test]
     fn test_new_default() {
-        let sampler = GridSearchSampler::new();
+        let sampler = GridSampler::new();
         let dist = Distribution::Float(FloatDistribution {
             low: 0.0,
             high: 1.0,
@@ -1031,8 +1031,8 @@ mod tests {
     #[test]
     fn test_reproducibility_same_grid_order() {
         // Two samplers with the same configuration should produce the same grid order
-        let sampler1 = GridSearchSampler::builder().n_points_per_param(5).build();
-        let sampler2 = GridSearchSampler::builder().n_points_per_param(5).build();
+        let sampler1 = GridSampler::builder().n_points_per_param(5).build();
+        let sampler2 = GridSampler::builder().n_points_per_param(5).build();
 
         let dist = Distribution::Float(FloatDistribution {
             low: 0.0,
@@ -1051,8 +1051,8 @@ mod tests {
 
     #[test]
     fn test_reproducibility_int_distribution() {
-        let sampler1 = GridSearchSampler::new();
-        let sampler2 = GridSearchSampler::new();
+        let sampler1 = GridSampler::new();
+        let sampler2 = GridSampler::new();
 
         let dist = Distribution::Int(IntDistribution {
             low: 0,
@@ -1073,8 +1073,8 @@ mod tests {
 
     #[test]
     fn test_reproducibility_categorical() {
-        let sampler1 = GridSearchSampler::new();
-        let sampler2 = GridSearchSampler::new();
+        let sampler1 = GridSampler::new();
+        let sampler2 = GridSampler::new();
 
         let dist = Distribution::Categorical(CategoricalDistribution { n_choices: 4 });
 
@@ -1091,13 +1091,13 @@ mod tests {
 
     #[test]
     fn test_grid_size_empty() {
-        let sampler = GridSearchSampler::new();
+        let sampler = GridSampler::new();
         assert_eq!(sampler.grid_size(), 0);
     }
 
     #[test]
     fn test_grid_size_single_distribution() {
-        let sampler = GridSearchSampler::builder().n_points_per_param(5).build();
+        let sampler = GridSampler::builder().n_points_per_param(5).build();
         let dist = Distribution::Float(FloatDistribution {
             low: 0.0,
             high: 1.0,
@@ -1115,7 +1115,7 @@ mod tests {
 
     #[test]
     fn test_grid_size_multiple_distributions() {
-        let sampler = GridSearchSampler::builder().n_points_per_param(3).build();
+        let sampler = GridSampler::builder().n_points_per_param(3).build();
         let dist1 = Distribution::Float(FloatDistribution {
             low: 0.0,
             high: 1.0,
