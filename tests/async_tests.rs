@@ -17,12 +17,9 @@ async fn test_optimize_async_basic() {
     let x_param = FloatParam::new(-10.0, 10.0);
 
     study
-        .optimize_async(10, move |mut trial| {
-            let x_param = x_param.clone();
-            async move {
-                let x = x_param.suggest(&mut trial)?;
-                Ok::<_, Error>((trial, x * x))
-            }
+        .optimize_async(10, move |trial: &mut optimizer::Trial| {
+            let x = x_param.suggest(trial)?;
+            Ok::<_, Error>(x * x)
         })
         .await
         .expect("async optimization should succeed");
@@ -45,12 +42,9 @@ async fn test_optimize_async_with_tpe() {
     let x_param = FloatParam::new(-5.0, 5.0);
 
     study
-        .optimize_async(15, move |mut trial| {
-            let x_param = x_param.clone();
-            async move {
-                let x = x_param.suggest(&mut trial)?;
-                Ok::<_, Error>((trial, x * x))
-            }
+        .optimize_async(15, move |trial: &mut optimizer::Trial| {
+            let x = x_param.suggest(trial)?;
+            Ok::<_, Error>(x * x)
         })
         .await
         .expect("async optimization with sampler should succeed");
@@ -68,12 +62,9 @@ async fn test_optimize_parallel() {
     let x_param = FloatParam::new(-10.0, 10.0);
 
     study
-        .optimize_parallel(20, 4, move |mut trial| {
-            let x_param = x_param.clone();
-            async move {
-                let x = x_param.suggest(&mut trial)?;
-                Ok::<_, Error>((trial, x * x))
-            }
+        .optimize_parallel(20, 4, move |trial: &mut optimizer::Trial| {
+            let x = x_param.suggest(trial)?;
+            Ok::<_, Error>(x * x)
         })
         .await
         .expect("parallel optimization should succeed");
@@ -95,14 +86,10 @@ async fn test_optimize_parallel_with_tpe() {
     let y_param = FloatParam::new(-5.0, 5.0);
 
     study
-        .optimize_parallel(15, 3, move |mut trial| {
-            let x_param = x_param.clone();
-            let y_param = y_param.clone();
-            async move {
-                let x = x_param.suggest(&mut trial)?;
-                let y = y_param.suggest(&mut trial)?;
-                Ok::<_, Error>((trial, x * x + y * y))
-            }
+        .optimize_parallel(15, 3, move |trial: &mut optimizer::Trial| {
+            let x = x_param.suggest(trial)?;
+            let y = y_param.suggest(trial)?;
+            Ok::<_, Error>(x * x + y * y)
         })
         .await
         .expect("parallel optimization with sampler should succeed");
@@ -115,27 +102,8 @@ async fn test_optimize_async_all_failures() {
     let study: Study<f64> = Study::new(Direction::Minimize);
 
     let result = study
-        .optimize_async(5, |trial| async move {
-            let _ = trial;
-            Err::<(_, f64), &str>("always fails")
-        })
-        .await;
-
-    assert!(
-        matches!(result, Err(Error::NoCompletedTrials)),
-        "should return NoCompletedTrials when all trials fail"
-    );
-}
-
-#[tokio::test]
-#[allow(deprecated)]
-async fn test_optimize_async_with_sampler_all_failures() {
-    let study: Study<f64> = Study::new(Direction::Minimize);
-
-    let result = study
-        .optimize_async_with_sampler(5, |trial| async move {
-            let _ = trial;
-            Err::<(_, f64), &str>("always fails")
+        .optimize_async(5, |_trial: &mut optimizer::Trial| {
+            Err::<f64, &str>("always fails")
         })
         .await;
 
@@ -150,27 +118,8 @@ async fn test_optimize_parallel_all_failures() {
     let study: Study<f64> = Study::new(Direction::Minimize);
 
     let result = study
-        .optimize_parallel(5, 2, |trial| async move {
-            let _ = trial;
-            Err::<(_, f64), &str>("always fails")
-        })
-        .await;
-
-    assert!(
-        matches!(result, Err(Error::NoCompletedTrials)),
-        "should return NoCompletedTrials when all trials fail"
-    );
-}
-
-#[tokio::test]
-#[allow(deprecated)]
-async fn test_optimize_parallel_with_sampler_all_failures() {
-    let study: Study<f64> = Study::new(Direction::Minimize);
-
-    let result = study
-        .optimize_parallel_with_sampler(5, 2, |trial| async move {
-            let _ = trial;
-            Err::<(_, f64), &str>("always fails")
+        .optimize_parallel(5, 2, |_trial: &mut optimizer::Trial| {
+            Err::<f64, &str>("always fails")
         })
         .await;
 
@@ -190,16 +139,13 @@ async fn test_optimize_async_partial_failures() {
     let x_param = FloatParam::new(0.0, 10.0);
 
     study
-        .optimize_async(10, move |mut trial| {
+        .optimize_async(10, move |trial: &mut optimizer::Trial| {
             let count = counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            let x_param = x_param.clone();
-            async move {
-                if count.is_multiple_of(2) {
-                    let x = x_param.suggest(&mut trial)?;
-                    Ok::<_, Error>((trial, x))
-                } else {
-                    Err(Error::NoCompletedTrials) // Use as error type
-                }
+            if count.is_multiple_of(2) {
+                let x = x_param.suggest(trial)?;
+                Ok::<_, Error>(x)
+            } else {
+                Err(Error::NoCompletedTrials) // Use as error type
             }
         })
         .await
@@ -218,12 +164,9 @@ async fn test_optimize_parallel_high_concurrency() {
 
     // Run with concurrency higher than n_trials
     study
-        .optimize_parallel(5, 10, move |mut trial| {
-            let x_param = x_param.clone();
-            async move {
-                let x = x_param.suggest(&mut trial)?;
-                Ok::<_, Error>((trial, x))
-            }
+        .optimize_parallel(5, 10, move |trial: &mut optimizer::Trial| {
+            let x = x_param.suggest(trial)?;
+            Ok::<_, Error>(x)
         })
         .await
         .expect("should handle high concurrency");
@@ -240,12 +183,9 @@ async fn test_optimize_parallel_single_concurrency() {
 
     // Run with concurrency of 1 (sequential)
     study
-        .optimize_parallel(10, 1, move |mut trial| {
-            let x_param = x_param.clone();
-            async move {
-                let x = x_param.suggest(&mut trial)?;
-                Ok::<_, Error>((trial, x))
-            }
+        .optimize_parallel(10, 1, move |trial: &mut optimizer::Trial| {
+            let x = x_param.suggest(trial)?;
+            Ok::<_, Error>(x)
         })
         .await
         .expect("should work with single concurrency");

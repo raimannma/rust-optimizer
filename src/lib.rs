@@ -113,6 +113,7 @@ mod fanova;
 mod importance;
 mod kde;
 pub mod multi_objective;
+pub mod objective;
 mod param;
 pub mod parameter;
 pub mod pareto;
@@ -127,6 +128,7 @@ mod visualization;
 
 pub use error::{Error, Result, TrialPruned};
 pub use fanova::{FanovaConfig, FanovaResult};
+pub use objective::Objective;
 #[cfg(feature = "derive")]
 pub use optimizer_derive::Categorical;
 #[cfg(feature = "serde")]
@@ -150,6 +152,7 @@ pub mod prelude {
     pub use crate::multi_objective::{
         MultiObjectiveSampler, MultiObjectiveStudy, MultiObjectiveTrial,
     };
+    pub use crate::objective::Objective;
     pub use crate::parameter::{
         BoolParam, Categorical, CategoricalParam, EnumParam, FloatParam, IntParam, ParamValue,
         Parameter,

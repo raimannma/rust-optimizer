@@ -1,7 +1,8 @@
 //! Async parallel optimization — evaluate multiple trials concurrently.
 //!
 //! Uses `optimize_parallel` with tokio to run several trials at once,
-//! reducing wall-clock time when the objective involves I/O or async work.
+//! reducing wall-clock time when the objective involves blocking work.
+//! Each sync closure is internally wrapped in `spawn_blocking`.
 //!
 //! Run with: `cargo run --example async_parallel --features async`
 
@@ -19,25 +20,18 @@ async fn main() -> optimizer::Result<()> {
 
     println!("Running {n_trials} trials with {concurrency} concurrent workers...");
 
+    let xc = x.clone();
+    let yc = y.clone();
     study
-        .optimize_parallel(n_trials, concurrency, {
-            let x = x.clone();
-            let y = y.clone();
-            move |mut trial| {
-                let x = x.clone();
-                let y = y.clone();
-                async move {
-                    let xv = x.suggest(&mut trial)?;
-                    let yv = y.suggest(&mut trial)?;
-
-                    // Simulate async I/O (e.g. calling an external service)
-                    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-
-                    let value = xv * xv + yv * yv;
-                    Ok::<_, optimizer::Error>((trial, value))
-                }
-            }
-        })
+        .optimize_parallel(
+            n_trials,
+            concurrency,
+            move |trial: &mut optimizer::Trial| {
+                let xv = xc.suggest(trial)?;
+                let yv = yc.suggest(trial)?;
+                Ok::<_, optimizer::Error>(xv * xv + yv * yv)
+            },
+        )
         .await?;
 
     let best = study.best_trial()?;

@@ -173,73 +173,27 @@ fn round_trip_preserves_trial_id_counter() {
 }
 
 #[test]
-fn checkpoint_file_created_at_interval() {
-    let study: Study<f64> = Study::new(Direction::Minimize);
-    let x = FloatParam::new(-10.0, 10.0).name("x");
-
-    let dir = tempdir();
-    let checkpoint = dir.join("checkpoint.json");
-
-    study
-        .optimize_with_checkpoint(10, 3, &checkpoint, |trial| {
-            let v = x.suggest(trial)?;
-            Ok::<_, optimizer::Error>(v * v)
-        })
-        .unwrap();
-
-    // Checkpoint should exist (written at trials 3, 6, 9)
-    assert!(checkpoint.exists(), "checkpoint file was not created");
-
-    // Load it and verify it's valid
-    let loaded: Study<f64> = Study::load(&checkpoint).unwrap();
-    // Last checkpoint was at trial 9, so it should have 9 trials
-    assert_eq!(loaded.n_trials(), 9);
-
-    std::fs::remove_dir_all(&dir).ok();
-}
-
-#[test]
-fn checkpoint_overwrites_previous() {
-    let study: Study<f64> = Study::new(Direction::Minimize);
-    let x = FloatParam::new(0.0, 1.0);
-
-    let dir = tempdir();
-    let checkpoint = dir.join("checkpoint.json");
-
-    study
-        .optimize_with_checkpoint(6, 3, &checkpoint, |trial| {
-            let v = x.suggest(trial)?;
-            Ok::<_, optimizer::Error>(v)
-        })
-        .unwrap();
-
-    // The checkpoint at trial 6 should overwrite the one from trial 3
-    let loaded: Study<f64> = Study::load(&checkpoint).unwrap();
-    assert_eq!(loaded.n_trials(), 6);
-
-    std::fs::remove_dir_all(&dir).ok();
-}
-
-#[test]
-fn resume_from_checkpoint_continues_trial_ids() {
+fn save_and_resume_continues_trial_ids() {
     let study: Study<f64> = Study::new(Direction::Minimize);
     let x = FloatParam::new(-5.0, 5.0).name("x");
 
     let dir = tempdir();
-    let checkpoint = dir.join("resume.json");
+    let save_path = dir.join("resume.json");
 
-    // Run 10 trials with checkpointing
+    // Run 10 trials
     study
-        .optimize_with_checkpoint(10, 5, &checkpoint, |trial| {
+        .optimize(10, |trial| {
             let v = x.suggest(trial)?;
             Ok::<_, optimizer::Error>(v * v)
         })
         .unwrap();
 
-    // Load and continue
-    let loaded: Study<f64> = Study::load(&checkpoint).unwrap();
+    // Save and reload
+    study.save(&save_path).unwrap();
+    let loaded: Study<f64> = Study::load(&save_path).unwrap();
     assert_eq!(loaded.n_trials(), 10);
 
+    // Continue with 5 more trials
     let remaining = 15 - loaded.n_trials();
     loaded
         .optimize(remaining, |trial| {
@@ -261,24 +215,26 @@ fn resume_from_checkpoint_continues_trial_ids() {
 }
 
 #[test]
-fn atomic_write_no_temp_file_left_behind() {
+fn save_uses_atomic_write() {
     let study: Study<f64> = Study::new(Direction::Minimize);
     let x = FloatParam::new(0.0, 1.0);
 
     let dir = tempdir();
-    let checkpoint = dir.join("atomic.json");
+    let save_path = dir.join("atomic.json");
 
     study
-        .optimize_with_checkpoint(3, 3, &checkpoint, |trial| {
+        .optimize(3, |trial| {
             let v = x.suggest(trial)?;
             Ok::<_, optimizer::Error>(v)
         })
         .unwrap();
 
+    study.save(&save_path).unwrap();
+
     // The temp file should have been renamed, not left behind
     let tmp_path = dir.join(".atomic.json.tmp");
     assert!(!tmp_path.exists(), "temp file was not cleaned up");
-    assert!(checkpoint.exists(), "checkpoint file was not created");
+    assert!(save_path.exists(), "save file was not created");
 
     std::fs::remove_dir_all(&dir).ok();
 }

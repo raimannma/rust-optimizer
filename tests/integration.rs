@@ -570,28 +570,36 @@ fn test_tpe_with_integer_parameters() {
 
 #[test]
 fn test_callback_early_stopping() {
-    use std::cell::Cell;
     use std::ops::ControlFlow;
 
-    let study: Study<f64> = Study::new(Direction::Minimize);
-    let trials_run = Cell::new(0);
-    let x_param = FloatParam::new(0.0, 10.0);
+    use optimizer::Objective;
+    use optimizer::sampler::CompletedTrial;
 
+    struct EarlyStopAfter5 {
+        x_param: FloatParam,
+    }
+
+    impl Objective<f64> for EarlyStopAfter5 {
+        type Error = Error;
+        fn evaluate(&self, trial: &mut Trial) -> Result<f64, Error> {
+            let x = self.x_param.suggest(trial)?;
+            Ok(x)
+        }
+        fn after_trial(&self, study: &Study<f64>, _trial: &CompletedTrial<f64>) -> ControlFlow<()> {
+            if study.n_trials() >= 5 {
+                ControlFlow::Break(())
+            } else {
+                ControlFlow::Continue(())
+            }
+        }
+    }
+
+    let study: Study<f64> = Study::new(Direction::Minimize);
     study
-        .optimize_with_callback(
+        .optimize_with(
             100,
-            |trial| {
-                trials_run.set(trials_run.get() + 1);
-                let x = x_param.suggest(trial)?;
-                Ok::<_, Error>(x)
-            },
-            |_study, _trial| {
-                // Stop after 5 trials
-                if trials_run.get() >= 5 {
-                    ControlFlow::Break(())
-                } else {
-                    ControlFlow::Continue(())
-                }
+            EarlyStopAfter5 {
+                x_param: FloatParam::new(0.0, 10.0),
             },
         )
         .expect("optimization should succeed");
@@ -769,48 +777,10 @@ fn test_optimize_all_trials_fail() {
 }
 
 #[test]
-fn test_optimize_with_callback_all_trials_fail() {
-    use std::ops::ControlFlow;
-
+fn test_optimize_with_all_trials_fail() {
     let study: Study<f64> = Study::new(Direction::Minimize);
 
-    let result = study.optimize_with_callback(
-        5,
-        |_trial| Err::<f64, &str>("always fails"),
-        |_study, _trial| ControlFlow::Continue(()),
-    );
-
-    assert!(
-        matches!(result, Err(Error::NoCompletedTrials)),
-        "should return NoCompletedTrials when all trials fail"
-    );
-}
-
-#[test]
-#[allow(deprecated)]
-fn test_optimize_with_sampler_all_trials_fail() {
-    let study: Study<f64> = Study::new(Direction::Minimize);
-
-    let result = study.optimize_with_sampler(5, |_trial| Err::<f64, &str>("always fails"));
-
-    assert!(
-        matches!(result, Err(Error::NoCompletedTrials)),
-        "should return NoCompletedTrials when all trials fail"
-    );
-}
-
-#[test]
-#[allow(deprecated)]
-fn test_optimize_with_callback_sampler_all_trials_fail() {
-    use std::ops::ControlFlow;
-
-    let study: Study<f64> = Study::new(Direction::Minimize);
-
-    let result = study.optimize_with_callback_sampler(
-        5,
-        |_trial| Err::<f64, &str>("always fails"),
-        |_study, _trial| ControlFlow::Continue(()),
-    );
+    let result = study.optimize(5, |_trial| Err::<f64, &str>("always fails"));
 
     assert!(
         matches!(result, Err(Error::NoCompletedTrials)),
@@ -965,27 +935,6 @@ fn test_tpe_with_step_distributions() {
 }
 
 #[test]
-#[allow(deprecated)]
-fn test_create_trial_vs_create_trial_with_sampler() {
-    let sampler = RandomSampler::with_seed(42);
-    let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
-
-    // create_trial() creates trial with sampler integration for Study<f64>
-    let trial1 = study.create_trial();
-    assert_eq!(trial1.id(), 0);
-
-    // create_trial_with_sampler() is deprecated but still works
-    let trial2 = study.create_trial_with_sampler();
-    assert_eq!(trial2.id(), 1);
-
-    // Both should work for suggesting parameters
-    let x_param = FloatParam::new(0.0, 1.0);
-    let mut trial3 = study.create_trial();
-    let x = x_param.suggest(&mut trial3).unwrap();
-    assert!((0.0..=1.0).contains(&x));
-}
-
-#[test]
 fn test_manual_trial_completion() {
     let study: Study<f64> = Study::new(Direction::Minimize);
     let x_param = FloatParam::new(0.0, 10.0);
@@ -1058,19 +1007,34 @@ fn test_tpe_empty_good_or_bad_values_fallback() {
 fn test_callback_early_stopping_on_first_trial() {
     use std::ops::ControlFlow;
 
-    let study: Study<f64> = Study::new(Direction::Minimize);
-    let x_param = FloatParam::new(0.0, 10.0);
+    use optimizer::Objective;
+    use optimizer::sampler::CompletedTrial;
 
+    struct StopImmediately {
+        x_param: FloatParam,
+    }
+
+    impl Objective<f64> for StopImmediately {
+        type Error = Error;
+        fn evaluate(&self, trial: &mut Trial) -> Result<f64, Error> {
+            let x = self.x_param.suggest(trial)?;
+            Ok(x)
+        }
+        fn after_trial(
+            &self,
+            _study: &Study<f64>,
+            _trial: &CompletedTrial<f64>,
+        ) -> ControlFlow<()> {
+            ControlFlow::Break(())
+        }
+    }
+
+    let study: Study<f64> = Study::new(Direction::Minimize);
     study
-        .optimize_with_callback(
+        .optimize_with(
             100,
-            |trial| {
-                let x = x_param.suggest(trial)?;
-                Ok::<_, Error>(x)
-            },
-            |_study, _trial| {
-                // Stop immediately after first trial
-                ControlFlow::Break(())
+            StopImmediately {
+                x_param: FloatParam::new(0.0, 10.0),
             },
         )
         .expect("optimization should succeed");
@@ -1082,23 +1046,35 @@ fn test_callback_early_stopping_on_first_trial() {
 fn test_callback_sampler_early_stopping() {
     use std::ops::ControlFlow;
 
+    use optimizer::Objective;
+    use optimizer::sampler::CompletedTrial;
+
+    struct StopAfter3 {
+        x_param: FloatParam,
+    }
+
+    impl Objective<f64> for StopAfter3 {
+        type Error = Error;
+        fn evaluate(&self, trial: &mut Trial) -> Result<f64, Error> {
+            let x = self.x_param.suggest(trial)?;
+            Ok(x)
+        }
+        fn after_trial(&self, study: &Study<f64>, _trial: &CompletedTrial<f64>) -> ControlFlow<()> {
+            if study.n_trials() >= 3 {
+                ControlFlow::Break(())
+            } else {
+                ControlFlow::Continue(())
+            }
+        }
+    }
+
     let sampler = RandomSampler::with_seed(42);
     let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
-    let x_param = FloatParam::new(0.0, 10.0);
-
     study
-        .optimize_with_callback(
+        .optimize_with(
             100,
-            |trial| {
-                let x = x_param.suggest(trial)?;
-                Ok::<_, Error>(x)
-            },
-            |study, _trial| {
-                if study.n_trials() >= 3 {
-                    ControlFlow::Break(())
-                } else {
-                    ControlFlow::Continue(())
-                }
+            StopAfter3 {
+                x_param: FloatParam::new(0.0, 10.0),
             },
         )
         .expect("optimization should succeed");
@@ -1362,165 +1338,6 @@ fn test_completed_trial_get() {
     let n_val: i64 = best.get(&n_param).unwrap();
     assert!((-10.0..=10.0).contains(&x_val));
     assert!((1..=10).contains(&n_val));
-}
-
-// =============================================================================
-// Tests for timeout-based optimization
-// =============================================================================
-
-#[test]
-fn test_optimize_until_runs_for_approximately_specified_duration() {
-    use std::time::{Duration, Instant};
-
-    let study: Study<f64> = Study::new(Direction::Minimize);
-    let x_param = FloatParam::new(-10.0, 10.0);
-
-    let duration = Duration::from_millis(200);
-    let start = Instant::now();
-
-    study
-        .optimize_until(duration, |trial| {
-            let x = x_param.suggest(trial)?;
-            Ok::<_, Error>(x * x)
-        })
-        .unwrap();
-
-    let elapsed = start.elapsed();
-    assert!(
-        elapsed >= duration,
-        "should run for at least the specified duration, elapsed: {elapsed:?}"
-    );
-    // Allow generous upper bound — the last trial may overshoot
-    assert!(
-        elapsed < duration + Duration::from_millis(200),
-        "should not overshoot excessively, elapsed: {elapsed:?}"
-    );
-}
-
-#[test]
-fn test_optimize_until_completes_at_least_one_trial() {
-    use std::time::Duration;
-
-    let study: Study<f64> = Study::new(Direction::Minimize);
-    let x_param = FloatParam::new(-10.0, 10.0);
-
-    study
-        .optimize_until(Duration::from_millis(100), |trial| {
-            let x = x_param.suggest(trial)?;
-            Ok::<_, Error>(x * x)
-        })
-        .unwrap();
-
-    assert!(
-        study.n_trials() >= 1,
-        "should complete at least one trial, got {}",
-        study.n_trials()
-    );
-}
-
-#[test]
-fn test_optimize_until_works_with_minimize() {
-    use std::time::Duration;
-
-    let sampler = RandomSampler::with_seed(42);
-    let study: Study<f64> = Study::with_sampler(Direction::Minimize, sampler);
-    let x_param = FloatParam::new(-10.0, 10.0);
-
-    study
-        .optimize_until(Duration::from_millis(100), |trial| {
-            let x = x_param.suggest(trial)?;
-            Ok::<_, Error>(x * x)
-        })
-        .unwrap();
-
-    let best = study.best_value().unwrap();
-    assert!(best >= 0.0, "x^2 should be non-negative");
-}
-
-#[test]
-fn test_optimize_until_works_with_maximize() {
-    use std::time::Duration;
-
-    let sampler = RandomSampler::with_seed(42);
-    let study: Study<f64> = Study::with_sampler(Direction::Maximize, sampler);
-    let x_param = FloatParam::new(0.0, 10.0);
-
-    study
-        .optimize_until(Duration::from_millis(100), |trial| {
-            let x = x_param.suggest(trial)?;
-            Ok::<_, Error>(x)
-        })
-        .unwrap();
-
-    let best = study.best_value().unwrap();
-    assert!(best >= 0.0);
-}
-
-#[test]
-fn test_optimize_until_with_callback_early_stopping() {
-    use std::ops::ControlFlow;
-    use std::time::Duration;
-
-    let study: Study<f64> = Study::new(Direction::Minimize);
-    let x_param = FloatParam::new(0.0, 10.0);
-
-    study
-        .optimize_until_with_callback(
-            Duration::from_secs(10), // long timeout — callback should stop early
-            |trial| {
-                let x = x_param.suggest(trial)?;
-                Ok::<_, Error>(x)
-            },
-            |study, _trial| {
-                if study.n_trials() >= 5 {
-                    ControlFlow::Break(())
-                } else {
-                    ControlFlow::Continue(())
-                }
-            },
-        )
-        .unwrap();
-
-    assert_eq!(
-        study.n_trials(),
-        5,
-        "callback should have stopped after 5 trials"
-    );
-}
-
-#[test]
-fn test_optimize_until_all_trials_fail() {
-    use std::time::Duration;
-
-    let study: Study<f64> = Study::new(Direction::Minimize);
-
-    let result = study.optimize_until(Duration::from_millis(50), |_trial| {
-        Err::<f64, &str>("always fails")
-    });
-
-    assert!(
-        matches!(result, Err(Error::NoCompletedTrials)),
-        "should return NoCompletedTrials when all trials fail"
-    );
-}
-
-#[test]
-fn test_optimize_until_with_non_f64_value_type() {
-    use std::time::Duration;
-
-    let study: Study<i32> = Study::new(Direction::Minimize);
-    let x_param = IntParam::new(-10, 10);
-
-    study
-        .optimize_until(Duration::from_millis(100), |trial| {
-            let x = x_param.suggest(trial)?;
-            Ok::<_, Error>(x.abs() as i32)
-        })
-        .unwrap();
-
-    assert!(study.n_trials() >= 1);
-    let best = study.best_trial().unwrap();
-    assert!(best.value >= 0);
 }
 
 // =============================================================================
@@ -1966,55 +1783,111 @@ fn test_display_matches_summary() {
 }
 
 // =============================================================================
-// Tests: optimize_with_retries
+// Tests: optimize_with retries via Objective trait
 // =============================================================================
 
 #[test]
 fn test_retries_successful_trials_not_retried() {
-    let study: Study<f64> = Study::new(Direction::Minimize);
-    let x_param = FloatParam::new(0.0, 10.0);
-    let call_count = std::cell::Cell::new(0u32);
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicU32, Ordering};
 
-    study
-        .optimize_with_retries(5, 3, |trial| {
-            let x = x_param.suggest(trial)?;
-            call_count.set(call_count.get() + 1);
-            Ok::<_, Error>(x * x)
-        })
-        .unwrap();
+    use optimizer::Objective;
+
+    struct SuccessObj {
+        x_param: FloatParam,
+        call_count: Arc<AtomicU32>,
+    }
+
+    impl Objective<f64> for SuccessObj {
+        type Error = Error;
+        fn evaluate(&self, trial: &mut Trial) -> Result<f64, Error> {
+            let x = self.x_param.suggest(trial)?;
+            self.call_count.fetch_add(1, Ordering::Relaxed);
+            Ok(x * x)
+        }
+        fn max_retries(&self) -> usize {
+            3
+        }
+    }
+
+    let study: Study<f64> = Study::new(Direction::Minimize);
+    let call_count = Arc::new(AtomicU32::new(0));
+    let obj = SuccessObj {
+        x_param: FloatParam::new(0.0, 10.0),
+        call_count: Arc::clone(&call_count),
+    };
+
+    study.optimize_with(5, obj).unwrap();
 
     // All trials succeed on first try — exactly 5 calls
-    assert_eq!(call_count.get(), 5);
+    assert_eq!(call_count.load(Ordering::Relaxed), 5);
     assert_eq!(study.n_trials(), 5);
 }
 
 #[test]
 fn test_retries_failed_trials_retried_up_to_max() {
-    let study: Study<f64> = Study::new(Direction::Minimize);
-    let x_param = FloatParam::new(0.0, 10.0);
-    let call_count = std::cell::Cell::new(0u32);
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicU32, Ordering};
 
-    let result = study.optimize_with_retries(1, 3, |trial| {
-        let _ = x_param.suggest(trial).unwrap();
-        call_count.set(call_count.get() + 1);
-        Err::<f64, _>("always fails")
-    });
+    use optimizer::Objective;
+
+    struct AlwaysFailObj {
+        x_param: FloatParam,
+        call_count: Arc<AtomicU32>,
+    }
+
+    impl Objective<f64> for AlwaysFailObj {
+        type Error = String;
+        fn evaluate(&self, trial: &mut Trial) -> Result<f64, String> {
+            let _ = self.x_param.suggest(trial).map_err(|e| e.to_string())?;
+            self.call_count.fetch_add(1, Ordering::Relaxed);
+            Err("always fails".to_string())
+        }
+        fn max_retries(&self) -> usize {
+            3
+        }
+    }
+
+    let study: Study<f64> = Study::new(Direction::Minimize);
+    let call_count = Arc::new(AtomicU32::new(0));
+    let obj = AlwaysFailObj {
+        x_param: FloatParam::new(0.0, 10.0),
+        call_count: Arc::clone(&call_count),
+    };
+
+    let result = study.optimize_with(1, obj);
 
     // 1 initial attempt + 3 retries = 4 total calls
-    assert_eq!(call_count.get(), 4);
+    assert_eq!(call_count.load(Ordering::Relaxed), 4);
     // No trials completed
     assert!(matches!(result, Err(Error::NoCompletedTrials)));
 }
 
 #[test]
 fn test_retries_permanently_failed_after_exhaustion() {
-    let study: Study<f64> = Study::new(Direction::Minimize);
-    let x_param = FloatParam::new(0.0, 10.0);
+    use optimizer::Objective;
 
-    let result = study.optimize_with_retries(3, 2, |trial| {
-        let _ = x_param.suggest(trial).unwrap();
-        Err::<f64, _>("transient error")
-    });
+    struct AlwaysFailObj {
+        x_param: FloatParam,
+    }
+
+    impl Objective<f64> for AlwaysFailObj {
+        type Error = String;
+        fn evaluate(&self, trial: &mut Trial) -> Result<f64, String> {
+            let _ = self.x_param.suggest(trial).map_err(|e| e.to_string())?;
+            Err("transient error".to_string())
+        }
+        fn max_retries(&self) -> usize {
+            2
+        }
+    }
+
+    let study: Study<f64> = Study::new(Direction::Minimize);
+    let obj = AlwaysFailObj {
+        x_param: FloatParam::new(0.0, 10.0),
+    };
+
+    let result = study.optimize_with(3, obj);
 
     assert!(
         matches!(result, Err(Error::NoCompletedTrials)),
@@ -2029,26 +1902,47 @@ fn test_retries_permanently_failed_after_exhaustion() {
 
 #[test]
 fn test_retries_uses_same_parameters() {
-    let study: Study<f64> = Study::new(Direction::Minimize);
-    let x_param = FloatParam::new(0.0, 10.0);
-    let seen_values = std::cell::RefCell::new(Vec::new());
-    let call_count = std::cell::Cell::new(0u32);
+    use std::sync::atomic::{AtomicU32, Ordering};
+    use std::sync::{Arc, Mutex};
 
-    study
-        .optimize_with_retries(1, 2, |trial| {
-            let x = x_param.suggest(trial).map_err(|e| e.to_string())?;
-            seen_values.borrow_mut().push(x);
-            call_count.set(call_count.get() + 1);
+    use optimizer::Objective;
+
+    struct RetryObj {
+        x_param: FloatParam,
+        seen_values: Arc<Mutex<Vec<f64>>>,
+        call_count: Arc<AtomicU32>,
+    }
+
+    impl Objective<f64> for RetryObj {
+        type Error = String;
+        fn evaluate(&self, trial: &mut Trial) -> Result<f64, String> {
+            let x = self.x_param.suggest(trial).map_err(|e| e.to_string())?;
+            self.seen_values.lock().unwrap().push(x);
+            let count = self.call_count.fetch_add(1, Ordering::Relaxed) + 1;
             // Fail first two attempts, succeed on third
-            if call_count.get() < 3 {
-                Err::<f64, _>("transient".to_string())
+            if count < 3 {
+                Err("transient".to_string())
             } else {
                 Ok(x * x)
             }
-        })
-        .unwrap();
+        }
+        fn max_retries(&self) -> usize {
+            2
+        }
+    }
 
-    let values = seen_values.borrow();
+    let study: Study<f64> = Study::new(Direction::Minimize);
+    let seen_values = Arc::new(Mutex::new(Vec::new()));
+    let call_count = Arc::new(AtomicU32::new(0));
+    let obj = RetryObj {
+        x_param: FloatParam::new(0.0, 10.0),
+        seen_values: Arc::clone(&seen_values),
+        call_count: Arc::clone(&call_count),
+    };
+
+    study.optimize_with(1, obj).unwrap();
+
+    let values = seen_values.lock().unwrap();
     assert_eq!(values.len(), 3, "should be called 3 times (1 + 2 retries)");
     // All three calls should have gotten the same parameter value
     assert_eq!(values[0], values[1]);
@@ -2057,25 +1951,44 @@ fn test_retries_uses_same_parameters() {
 
 #[test]
 fn test_retries_n_trials_counts_unique_configs() {
-    let study: Study<f64> = Study::new(Direction::Minimize);
-    let x_param = FloatParam::new(0.0, 10.0);
-    let call_count = std::cell::Cell::new(0u32);
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicU32, Ordering};
 
-    study
-        .optimize_with_retries(3, 2, |trial| {
-            let x = x_param.suggest(trial).map_err(|e| e.to_string())?;
-            call_count.set(call_count.get() + 1);
+    use optimizer::Objective;
+
+    struct FailFirstObj {
+        x_param: FloatParam,
+        call_count: Arc<AtomicU32>,
+    }
+
+    impl Objective<f64> for FailFirstObj {
+        type Error = String;
+        fn evaluate(&self, trial: &mut Trial) -> Result<f64, String> {
+            let x = self.x_param.suggest(trial).map_err(|e| e.to_string())?;
+            let count = self.call_count.fetch_add(1, Ordering::Relaxed) + 1;
             // Fail first attempt of each config, succeed on retry
-            if call_count.get() % 2 == 1 {
-                Err::<f64, _>("transient".to_string())
+            if count % 2 == 1 {
+                Err("transient".to_string())
             } else {
                 Ok(x * x)
             }
-        })
-        .unwrap();
+        }
+        fn max_retries(&self) -> usize {
+            2
+        }
+    }
+
+    let study: Study<f64> = Study::new(Direction::Minimize);
+    let call_count = Arc::new(AtomicU32::new(0));
+    let obj = FailFirstObj {
+        x_param: FloatParam::new(0.0, 10.0),
+        call_count: Arc::clone(&call_count),
+    };
+
+    study.optimize_with(3, obj).unwrap();
 
     // 3 unique configs, each needing 2 calls = 6 total calls
-    assert_eq!(call_count.get(), 6);
+    assert_eq!(call_count.load(Ordering::Relaxed), 6);
     // But only 3 completed trials
     assert_eq!(study.n_trials(), 3);
 }
@@ -2087,7 +2000,7 @@ fn test_retries_with_zero_max_retries_same_as_optimize() {
     let call_count = std::cell::Cell::new(0u32);
 
     study
-        .optimize_with_retries(5, 0, |trial| {
+        .optimize(5, |trial| {
             let x = x_param.suggest(trial)?;
             call_count.set(call_count.get() + 1);
             Ok::<_, Error>(x * x)
