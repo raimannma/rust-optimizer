@@ -47,12 +47,10 @@ fn test_summary_with_pruned_trials() {
         study.prune_trial(trial);
     }
 
+    assert_eq!(study.n_pruned_trials(), 2);
     let summary = study.summary();
-    // Should show breakdown when there are pruned trials
-    if study.n_pruned_trials() > 0 {
-        assert!(summary.contains("complete"));
-        assert!(summary.contains("pruned"));
-    }
+    assert!(summary.contains("complete"));
+    assert!(summary.contains("pruned"));
 }
 
 #[test]
