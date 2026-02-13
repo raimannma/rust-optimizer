@@ -95,8 +95,13 @@ impl PercentilePruner {
     }
 
     /// Set the minimum number of completed trials required before pruning.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `n` is 0.
     #[must_use]
     pub fn n_min_trials(mut self, n: usize) -> Self {
+        assert!(n >= 1, "n_min_trials must be >= 1, got {n}");
         self.n_min_trials = n;
         self
     }
@@ -157,6 +162,7 @@ impl Pruner for PercentilePruner {
     clippy::cast_sign_loss
 )]
 pub(crate) fn compute_percentile(values: &mut [f64], percentile: f64) -> f64 {
+    assert!(!values.is_empty(), "compute_percentile: empty input");
     values.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap_or(core::cmp::Ordering::Equal));
     let len = values.len();
     if len == 1 {

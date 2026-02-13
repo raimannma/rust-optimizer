@@ -639,7 +639,8 @@ where
 
     /// Return the number of completed trials.
     ///
-    /// Failed trials are not counted.
+    /// Pruned and failed trials are not counted. Use
+    /// [`n_pruned_trials()`](Self::n_pruned_trials) for the pruned count.
     ///
     /// # Examples
     ///
@@ -658,7 +659,12 @@ where
     /// ```
     #[must_use]
     pub fn n_trials(&self) -> usize {
-        self.storage.trials_arc().read().len()
+        self.storage
+            .trials_arc()
+            .read()
+            .iter()
+            .filter(|t| t.state == TrialState::Complete)
+            .count()
     }
 
     /// Return the number of pruned trials.

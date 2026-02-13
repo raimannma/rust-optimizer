@@ -255,6 +255,12 @@ impl Parameter for FloatParam {
     }
 
     fn validate(&self) -> Result<()> {
+        if !self.low.is_finite() || !self.high.is_finite() {
+            return Err(Error::InvalidBounds {
+                low: self.low,
+                high: self.high,
+            });
+        }
         if self.low > self.high {
             return Err(Error::InvalidBounds {
                 low: self.low,
@@ -265,7 +271,7 @@ impl Parameter for FloatParam {
             return Err(Error::InvalidLogBounds);
         }
         if let Some(step) = self.step
-            && step <= 0.0
+            && (!step.is_finite() || step <= 0.0)
         {
             return Err(Error::InvalidStep);
         }
@@ -550,7 +556,8 @@ impl Parameter for BoolParam {
 
     fn cast_param_value(&self, param_value: &ParamValue) -> Result<bool> {
         match param_value {
-            ParamValue::Categorical(index) => Ok(*index != 0),
+            ParamValue::Categorical(index) if *index < 2 => Ok(*index != 0),
+            ParamValue::Categorical(_) => Err(Error::Internal("bool index out of bounds")),
             _ => Err(Error::Internal(
                 "Categorical distribution should return Categorical value",
             )),
@@ -790,6 +797,30 @@ mod tests {
     }
 
     #[test]
+    fn float_param_validate_nan() {
+        assert!(FloatParam::new(f64::NAN, 1.0).validate().is_err());
+        assert!(FloatParam::new(0.0, f64::NAN).validate().is_err());
+        assert!(FloatParam::new(f64::NAN, f64::NAN).validate().is_err());
+    }
+
+    #[test]
+    fn float_param_validate_infinity() {
+        assert!(FloatParam::new(f64::INFINITY, 1.0).validate().is_err());
+        assert!(FloatParam::new(0.0, f64::NEG_INFINITY).validate().is_err());
+    }
+
+    #[test]
+    fn float_param_validate_nan_step() {
+        assert!(FloatParam::new(0.0, 1.0).step(f64::NAN).validate().is_err());
+        assert!(
+            FloatParam::new(0.0, 1.0)
+                .step(f64::INFINITY)
+                .validate()
+                .is_err()
+        );
+    }
+
+    #[test]
     #[allow(clippy::float_cmp)]
     fn float_param_cast_param_value() {
         let param = FloatParam::new(0.0, 1.0);
@@ -918,6 +949,13 @@ mod tests {
         assert!(!param.cast_param_value(&ParamValue::Categorical(0)).unwrap());
         assert!(param.cast_param_value(&ParamValue::Categorical(1)).unwrap());
         assert!(param.cast_param_value(&ParamValue::Float(1.0)).is_err());
+    }
+
+    #[test]
+    fn bool_param_cast_out_of_bounds() {
+        let param = BoolParam::new();
+        assert!(param.cast_param_value(&ParamValue::Categorical(2)).is_err());
+        assert!(param.cast_param_value(&ParamValue::Categorical(5)).is_err());
     }
 
     #[derive(Clone, Debug, PartialEq)]

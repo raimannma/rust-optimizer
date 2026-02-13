@@ -255,7 +255,7 @@ impl Study<f64> {
 /// Escape a string for CSV output. If the value contains a comma, quote, or
 /// newline, wrap it in double-quotes and double any embedded quotes.
 fn csv_escape(s: &str) -> String {
-    if s.contains(',') || s.contains('"') || s.contains('\n') {
+    if s.contains(',') || s.contains('"') || s.contains('\n') || s.contains('\r') {
         format!("\"{}\"", s.replace('"', "\"\""))
     } else {
         s.to_string()

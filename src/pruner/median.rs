@@ -89,8 +89,13 @@ impl MedianPruner {
     }
 
     /// Set the minimum number of completed trials required before pruning.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `n` is 0.
     #[must_use]
     pub fn n_min_trials(mut self, n: usize) -> Self {
+        assert!(n >= 1, "n_min_trials must be >= 1, got {n}");
         self.n_min_trials = n;
         self
     }

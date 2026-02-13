@@ -44,6 +44,8 @@
 //! let study: Study<f64> = Study::with_sampler(Direction::Minimize, SobolSampler::with_seed(42));
 //! ```
 
+use std::collections::HashMap;
+
 use parking_lot::Mutex;
 use sobol_burley::sample;
 
@@ -51,12 +53,10 @@ use crate::distribution::Distribution;
 use crate::param::ParamValue;
 use crate::sampler::{CompletedTrial, Sampler};
 
-/// Internal state for tracking the dimension counter within a trial.
+/// Internal state for tracking per-trial dimension counters.
 struct SobolState {
-    /// The `trial_id` of the current trial (used to reset dimension counter).
-    current_trial: u64,
-    /// Next Sobol dimension to use for the current trial.
-    next_dimension: u32,
+    /// Next Sobol dimension for each in-flight trial.
+    dimensions: HashMap<u64, u32>,
 }
 
 /// Quasi-random sampler using Sobol low-discrepancy sequences.
@@ -107,8 +107,7 @@ impl SobolSampler {
         Self {
             seed: seed as u32,
             state: Mutex::new(SobolState {
-                current_trial: u64::MAX,
-                next_dimension: 0,
+                dimensions: HashMap::new(),
             }),
         }
     }
@@ -130,20 +129,15 @@ impl Sampler for SobolSampler {
     ) -> ParamValue {
         let mut state = self.state.lock();
 
-        // Reset dimension counter when a new trial starts.
-        if state.current_trial != trial_id {
-            state.current_trial = trial_id;
-            state.next_dimension = 0;
-        }
-
-        let dimension = state.next_dimension;
-        state.next_dimension = dimension + 1;
+        let dimension = state.dimensions.entry(trial_id).or_insert(0);
+        let dim = *dimension;
+        *dimension = dim + 1;
 
         // Use trial_id as the Sobol sequence index.
         let index = trial_id as u32;
 
         // Generate a quasi-random point in [0, 1).
-        let point = f64::from(sample(index, dimension, self.seed));
+        let point = f64::from(sample(index, dim, self.seed));
 
         map_point_to_distribution(point, distribution)
     }

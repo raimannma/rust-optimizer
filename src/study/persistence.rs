@@ -49,7 +49,7 @@ impl<V: PartialOrd + Clone + serde::Serialize> Study<V> {
     pub fn save(&self, path: impl AsRef<std::path::Path>) -> std::io::Result<()> {
         let path = path.as_ref();
         let trials = self.trials();
-        let next_trial_id = trials.iter().map(|t| t.id).max().map_or(0, |id| id + 1);
+        let next_trial_id = self.storage.peek_next_trial_id();
         let snapshot = StudySnapshot {
             version: 1,
             direction: self.direction,

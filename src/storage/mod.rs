@@ -77,6 +77,13 @@ pub trait Storage<V>: Send + Sync {
     /// calls always produce distinct IDs.
     fn next_trial_id(&self) -> u64;
 
+    /// Return the current value of the next-trial-ID counter without incrementing.
+    ///
+    /// This is used for persistence (e.g. `Study::save`) to capture the
+    /// counter's exact position, including IDs assigned to failed trials
+    /// that are not stored.
+    fn peek_next_trial_id(&self) -> u64;
+
     /// Reload from an external source (e.g. a file written by another
     /// process).  Return `true` if the in-memory buffer was updated.
     ///

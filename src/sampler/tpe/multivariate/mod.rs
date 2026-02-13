@@ -216,6 +216,13 @@ pub enum ConstantLiarStrategy {
 ///
 /// assert!(study.best_value().unwrap() < 1.0);
 /// ```
+/// Cached joint sample for a specific trial.
+struct JointSampleCache {
+    trial_id: u64,
+    search_space: HashMap<ParamId, Distribution>,
+    sample: HashMap<ParamId, ParamValue>,
+}
+
 pub struct MultivariateTpeSampler {
     /// Strategy for computing the gamma quantile.
     gamma_strategy: Arc<dyn GammaStrategy>,
@@ -230,8 +237,7 @@ pub struct MultivariateTpeSampler {
     /// Thread-safe RNG for sampling.
     rng: Mutex<fastrand::Rng>,
     /// Cache for joint samples to maintain consistency across parameters within the same trial.
-    /// The tuple contains (`trial_id`, cached joint sample).
-    joint_sample_cache: Mutex<Option<(u64, HashMap<ParamId, ParamValue>)>>,
+    joint_sample_cache: Mutex<Option<JointSampleCache>>,
 }
 
 impl MultivariateTpeSampler {
@@ -453,11 +459,13 @@ impl Sampler for MultivariateTpeSampler {
         // Check if we have a cached joint sample for this trial
         {
             let cache = self.joint_sample_cache.lock();
-            if let Some((cached_trial_id, ref cached_sample)) = *cache
-                && cached_trial_id == trial_id
+            if let Some(ref c) = *cache
+                && c.trial_id == trial_id
             {
                 // Try to find a matching parameter from the cached sample
-                if let Some(value) = Self::find_matching_param(distribution, cached_sample) {
+                if let Some(value) =
+                    Self::find_matching_param(distribution, &c.search_space, &c.sample)
+                {
                     return value;
                 }
             }
@@ -470,13 +478,18 @@ impl Sampler for MultivariateTpeSampler {
         let joint_sample = self.sample_joint(&search_space, history);
 
         // Cache the joint sample for this trial
+        let result = Self::find_matching_param(distribution, &search_space, &joint_sample);
         {
             let mut cache = self.joint_sample_cache.lock();
-            *cache = Some((trial_id, joint_sample.clone()));
+            *cache = Some(JointSampleCache {
+                trial_id,
+                search_space,
+                sample: joint_sample,
+            });
         }
 
         // Find and return the value for the requested distribution
-        Self::find_matching_param(distribution, &joint_sample).unwrap_or_else(|| {
+        result.unwrap_or_else(|| {
             // Fallback to uniform sampling if no match found
             let mut rng = self.rng.lock();
             crate::sampler::common::sample_random(&mut rng, distribution)
@@ -485,33 +498,18 @@ impl Sampler for MultivariateTpeSampler {
 }
 
 impl MultivariateTpeSampler {
-    /// Finds a matching parameter value from the cached sample based on distribution.
-    ///
-    /// This is an associated function that matches parameters by comparing
-    /// distribution bounds and types.
+    /// Finds a matching parameter value from the cached sample based on exact
+    /// distribution equality.
     fn find_matching_param(
         distribution: &Distribution,
+        search_space: &HashMap<ParamId, Distribution>,
         cached_sample: &HashMap<ParamId, ParamValue>,
     ) -> Option<ParamValue> {
-        // Match by distribution type and value compatibility
-        for value in cached_sample.values() {
-            match (distribution, value) {
-                (Distribution::Float(d), ParamValue::Float(v)) => {
-                    if *v >= d.low && *v <= d.high {
-                        return Some(value.clone());
-                    }
-                }
-                (Distribution::Int(d), ParamValue::Int(v)) => {
-                    if *v >= d.low && *v <= d.high {
-                        return Some(value.clone());
-                    }
-                }
-                (Distribution::Categorical(d), ParamValue::Categorical(v)) => {
-                    if *v < d.n_choices {
-                        return Some(value.clone());
-                    }
-                }
-                _ => {}
+        for (id, dist) in search_space {
+            if dist == distribution
+                && let Some(value) = cached_sample.get(id)
+            {
+                return Some(value.clone());
             }
         }
         None
@@ -4213,12 +4211,15 @@ mod tests {
         fn test_find_matching_param_float() {
             let x_id = ParamId::new();
             let y_id = ParamId::new();
+            let dist = float_dist(0.0, 1.0);
+            let mut space = HashMap::new();
+            space.insert(x_id, dist.clone());
+            space.insert(y_id, float_dist(2.0, 3.0));
             let mut cached = HashMap::new();
             cached.insert(x_id, ParamValue::Float(0.5));
-            cached.insert(y_id, ParamValue::Float(0.8));
+            cached.insert(y_id, ParamValue::Float(2.8));
 
-            let dist = float_dist(0.0, 1.0);
-            let result = MultivariateTpeSampler::find_matching_param(&dist, &cached);
+            let result = MultivariateTpeSampler::find_matching_param(&dist, &space, &cached);
 
             assert!(result.is_some());
             if let Some(ParamValue::Float(v)) = result {
@@ -4229,11 +4230,13 @@ mod tests {
         #[test]
         fn test_find_matching_param_int() {
             let n_id = ParamId::new();
+            let dist = int_dist(0, 10);
+            let mut space = HashMap::new();
+            space.insert(n_id, dist.clone());
             let mut cached = HashMap::new();
             cached.insert(n_id, ParamValue::Int(5));
 
-            let dist = int_dist(0, 10);
-            let result = MultivariateTpeSampler::find_matching_param(&dist, &cached);
+            let result = MultivariateTpeSampler::find_matching_param(&dist, &space, &cached);
 
             assert!(result.is_some());
             if let Some(ParamValue::Int(v)) = result {
@@ -4244,11 +4247,13 @@ mod tests {
         #[test]
         fn test_find_matching_param_categorical() {
             let choice_id = ParamId::new();
+            let dist = categorical_dist(3);
+            let mut space = HashMap::new();
+            space.insert(choice_id, dist.clone());
             let mut cached = HashMap::new();
             cached.insert(choice_id, ParamValue::Categorical(1));
 
-            let dist = categorical_dist(3);
-            let result = MultivariateTpeSampler::find_matching_param(&dist, &cached);
+            let result = MultivariateTpeSampler::find_matching_param(&dist, &space, &cached);
 
             assert!(result.is_some());
             if let Some(ParamValue::Categorical(v)) = result {
@@ -4259,12 +4264,14 @@ mod tests {
         #[test]
         fn test_find_matching_param_no_match() {
             let x_id = ParamId::new();
+            let mut space = HashMap::new();
+            space.insert(x_id, float_dist(0.0, 1.0));
             let mut cached = HashMap::new();
             cached.insert(x_id, ParamValue::Float(0.5));
 
-            // Looking for Int, but only Float in cache
+            // Looking for Int, but only Float in search space
             let dist = int_dist(0, 10);
-            let result = MultivariateTpeSampler::find_matching_param(&dist, &cached);
+            let result = MultivariateTpeSampler::find_matching_param(&dist, &space, &cached);
 
             assert!(result.is_none());
         }
@@ -4272,11 +4279,14 @@ mod tests {
         #[test]
         fn test_find_matching_param_out_of_bounds() {
             let x_id = ParamId::new();
+            // Search space has a different distribution than what we're looking for
+            let mut space = HashMap::new();
+            space.insert(x_id, float_dist(0.0, 10.0));
             let mut cached = HashMap::new();
-            cached.insert(x_id, ParamValue::Float(5.0)); // Out of bounds
+            cached.insert(x_id, ParamValue::Float(5.0));
 
             let dist = float_dist(0.0, 1.0);
-            let result = MultivariateTpeSampler::find_matching_param(&dist, &cached);
+            let result = MultivariateTpeSampler::find_matching_param(&dist, &space, &cached);
 
             assert!(result.is_none());
         }

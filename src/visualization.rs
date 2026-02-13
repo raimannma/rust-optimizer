@@ -341,7 +341,10 @@ Plotly.newPlot("parcoords", [{{
 }
 
 fn write_importance_chart(html: &mut String, importance: &[(String, f64)]) {
-    let names: Vec<_> = importance.iter().map(|(n, _)| format!("\"{n}\"")).collect();
+    let names: Vec<_> = importance
+        .iter()
+        .map(|(n, _)| format!("\"{}\"", escape_js(n)))
+        .collect();
     let values: Vec<f64> = importance.iter().map(|(_, v)| *v).collect();
 
     let _ = write!(
@@ -457,12 +460,19 @@ fn min_max(vals: &[f64]) -> (f64, f64) {
     let mut mn = f64::INFINITY;
     let mut mx = f64::NEG_INFINITY;
     for &v in vals {
+        if v.is_nan() {
+            continue;
+        }
         if v < mn {
             mn = v;
         }
         if v > mx {
             mx = v;
         }
+    }
+    // If all values were NaN, return 0.0..1.0 as a safe fallback.
+    if mn > mx {
+        return (0.0, 1.0);
     }
     (mn, mx)
 }

@@ -650,24 +650,37 @@ impl TpeSampler {
         bad_trials: &[&CompletedTrial],
         rng: &mut fastrand::Rng,
     ) -> ParamValue {
+        let target_dist = Distribution::Float(d.clone());
         let good_values: Vec<f64> = good_trials
             .iter()
-            .flat_map(|t| t.params.values())
-            .filter_map(|v| match v {
-                ParamValue::Float(f) => Some(*f),
-                _ => None,
+            .filter_map(|t| {
+                t.distributions.iter().find_map(|(id, dist)| {
+                    if *dist == target_dist {
+                        t.params.get(id).and_then(|v| match v {
+                            ParamValue::Float(f) => Some(*f),
+                            _ => None,
+                        })
+                    } else {
+                        None
+                    }
+                })
             })
-            .filter(|&v| v >= d.low && v <= d.high)
             .collect();
 
         let bad_values: Vec<f64> = bad_trials
             .iter()
-            .flat_map(|t| t.params.values())
-            .filter_map(|v| match v {
-                ParamValue::Float(f) => Some(*f),
-                _ => None,
+            .filter_map(|t| {
+                t.distributions.iter().find_map(|(id, dist)| {
+                    if *dist == target_dist {
+                        t.params.get(id).and_then(|v| match v {
+                            ParamValue::Float(f) => Some(*f),
+                            _ => None,
+                        })
+                    } else {
+                        None
+                    }
+                })
             })
-            .filter(|&v| v >= d.low && v <= d.high)
             .collect();
 
         if good_values.is_empty() || bad_values.is_empty() {
@@ -692,24 +705,37 @@ impl TpeSampler {
         bad_trials: &[&CompletedTrial],
         rng: &mut fastrand::Rng,
     ) -> ParamValue {
+        let target_dist = Distribution::Int(d.clone());
         let good_values: Vec<i64> = good_trials
             .iter()
-            .flat_map(|t| t.params.values())
-            .filter_map(|v| match v {
-                ParamValue::Int(i) => Some(*i),
-                _ => None,
+            .filter_map(|t| {
+                t.distributions.iter().find_map(|(id, dist)| {
+                    if *dist == target_dist {
+                        t.params.get(id).and_then(|v| match v {
+                            ParamValue::Int(i) => Some(*i),
+                            _ => None,
+                        })
+                    } else {
+                        None
+                    }
+                })
             })
-            .filter(|&v| v >= d.low && v <= d.high)
             .collect();
 
         let bad_values: Vec<i64> = bad_trials
             .iter()
-            .flat_map(|t| t.params.values())
-            .filter_map(|v| match v {
-                ParamValue::Int(i) => Some(*i),
-                _ => None,
+            .filter_map(|t| {
+                t.distributions.iter().find_map(|(id, dist)| {
+                    if *dist == target_dist {
+                        t.params.get(id).and_then(|v| match v {
+                            ParamValue::Int(i) => Some(*i),
+                            _ => None,
+                        })
+                    } else {
+                        None
+                    }
+                })
             })
-            .filter(|&v| v >= d.low && v <= d.high)
             .collect();
 
         if good_values.is_empty() || bad_values.is_empty() {
@@ -735,24 +761,37 @@ impl TpeSampler {
         bad_trials: &[&CompletedTrial],
         rng: &mut fastrand::Rng,
     ) -> ParamValue {
+        let target_dist = Distribution::Categorical(d.clone());
         let good_indices: Vec<usize> = good_trials
             .iter()
-            .flat_map(|t| t.params.values())
-            .filter_map(|v| match v {
-                ParamValue::Categorical(i) => Some(*i),
-                _ => None,
+            .filter_map(|t| {
+                t.distributions.iter().find_map(|(id, dist)| {
+                    if *dist == target_dist {
+                        t.params.get(id).and_then(|v| match v {
+                            ParamValue::Categorical(i) => Some(*i),
+                            _ => None,
+                        })
+                    } else {
+                        None
+                    }
+                })
             })
-            .filter(|&i| i < d.n_choices)
             .collect();
 
         let bad_indices: Vec<usize> = bad_trials
             .iter()
-            .flat_map(|t| t.params.values())
-            .filter_map(|v| match v {
-                ParamValue::Categorical(i) => Some(*i),
-                _ => None,
+            .filter_map(|t| {
+                t.distributions.iter().find_map(|(id, dist)| {
+                    if *dist == target_dist {
+                        t.params.get(id).and_then(|v| match v {
+                            ParamValue::Categorical(i) => Some(*i),
+                            _ => None,
+                        })
+                    } else {
+                        None
+                    }
+                })
             })
-            .filter(|&i| i < d.n_choices)
             .collect();
 
         if good_indices.is_empty() || bad_indices.is_empty() {

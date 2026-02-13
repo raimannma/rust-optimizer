@@ -104,4 +104,8 @@ impl<V: Send + Sync> Storage<V> for MemoryStorage<V> {
     fn next_trial_id(&self) -> u64 {
         self.next_id.fetch_add(1, Ordering::SeqCst)
     }
+
+    fn peek_next_trial_id(&self) -> u64 {
+        self.next_id.load(Ordering::SeqCst)
+    }
 }

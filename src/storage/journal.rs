@@ -130,8 +130,8 @@ use crate::sampler::CompletedTrial;
 pub struct JournalStorage<V = f64> {
     memory: MemoryStorage<V>,
     path: PathBuf,
-    /// Serialise in-process writes so we only hold the file lock briefly.
-    write_lock: Mutex<()>,
+    /// Serialise in-process writes and refreshes so they don't race.
+    io_lock: Mutex<()>,
     /// Byte offset of last-read position for incremental refresh.
     file_offset: AtomicU64,
     _marker: PhantomData<V>,
@@ -156,7 +156,7 @@ impl<V: Serialize + DeserializeOwned + Send + Sync> JournalStorage<V> {
         Self {
             memory: MemoryStorage::new(),
             path,
-            write_lock: Mutex::new(()),
+            io_lock: Mutex::new(()),
             file_offset: AtomicU64::new(0),
             _marker: PhantomData,
         }
@@ -180,15 +180,19 @@ impl<V: Serialize + DeserializeOwned + Send + Sync> JournalStorage<V> {
         Ok(Self {
             memory: MemoryStorage::with_trials(trials),
             path,
-            write_lock: Mutex::new(()),
+            io_lock: Mutex::new(()),
             file_offset: AtomicU64::new(offset),
             _marker: PhantomData,
         })
     }
 
     /// Append a single trial to the JSONL file (best-effort).
+    ///
+    /// Does **not** advance `file_offset` — that is left to `refresh`
+    /// so that externally-written data between the old offset and our
+    /// write is never skipped.
     fn write_to_file(&self, trial: &CompletedTrial<V>) -> crate::Result<()> {
-        let _guard = self.write_lock.lock();
+        let _guard = self.io_lock.lock();
 
         let mut file = OpenOptions::new()
             .create(true)
@@ -210,11 +214,6 @@ impl<V: Serialize + DeserializeOwned + Send + Sync> JournalStorage<V> {
         writeln!(file, "{line}").map_err(|e| crate::Error::Storage(e.to_string()))?;
         file.sync_data()
             .map_err(|e| crate::Error::Storage(e.to_string()))?;
-
-        let pos = file
-            .stream_position()
-            .map_err(|e| crate::Error::Storage(e.to_string()))?;
-        self.file_offset.store(pos, Ordering::SeqCst);
 
         file.unlock()
             .map_err(|e| crate::Error::Storage(e.to_string()))?;
@@ -238,7 +237,13 @@ impl<V: Serialize + DeserializeOwned + Send + Sync> Storage<V> for JournalStorag
         self.memory.next_trial_id()
     }
 
+    fn peek_next_trial_id(&self) -> u64 {
+        self.memory.peek_next_trial_id()
+    }
+
     fn refresh(&self) -> bool {
+        let _guard = self.io_lock.lock();
+
         let Ok(file) = File::open(&self.path) else {
             return false;
         };
@@ -275,6 +280,7 @@ impl<V: Serialize + DeserializeOwned + Send + Sync> Storage<V> for JournalStorag
         let _ = file.unlock();
 
         let bytes_read = buf.len() as u64;
+        let new_offset = offset + bytes_read;
         let mut new_trials = Vec::new();
 
         for line in buf.lines() {
@@ -293,19 +299,23 @@ impl<V: Serialize + DeserializeOwned + Send + Sync> Storage<V> for JournalStorag
         }
 
         if new_trials.is_empty() {
-            self.file_offset
-                .store(offset + bytes_read, Ordering::SeqCst);
+            self.file_offset.fetch_max(new_offset, Ordering::SeqCst);
             return false;
         }
 
-        let mut guard = self.memory.trials_arc().write();
+        let mut mem_guard = self.memory.trials_arc().write();
+
+        // Deduplicate: only add trials whose IDs are not already in memory.
+        let existing_ids: std::collections::HashSet<u64> = mem_guard.iter().map(|t| t.id).collect();
+        new_trials.retain(|t| !existing_ids.contains(&t.id));
+
         if let Some(max_id) = new_trials.iter().map(|t| t.id).max() {
             self.memory.bump_next_id(max_id + 1);
         }
-        guard.extend(new_trials);
-        self.file_offset
-            .store(offset + bytes_read, Ordering::SeqCst);
-        true
+        let added = !new_trials.is_empty();
+        mem_guard.extend(new_trials);
+        self.file_offset.fetch_max(new_offset, Ordering::SeqCst);
+        added
     }
 }
 

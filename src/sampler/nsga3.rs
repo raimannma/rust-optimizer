@@ -561,7 +561,7 @@ fn nsga3_select(
     state: &mut Nsga3State,
     population: &[&MultiObjectiveTrial],
     directions: &[Direction],
-) -> Vec<Vec<ParamValue>> {
+) -> (Vec<Vec<ParamValue>>, Vec<usize>) {
     let pop_size = state.evo.population_size;
     let n_obj = directions.len();
 
@@ -633,12 +633,13 @@ fn nsga3_select(
         selected.push(state.evo.rng.usize(0..n));
     }
 
-    selected
+    let params = selected
         .iter()
         .map(|&idx| {
             extract_trial_params(population[idx], &state.evo.dimensions, &mut state.evo.rng)
         })
-        .collect()
+        .collect();
+    (params, selected)
 }
 
 /// Tournament selection based on rank only (no crowding distance in NSGA-III).
@@ -675,26 +676,34 @@ fn nsga3_generate_offspring(
         initialize_nsga3(state, directions);
     }
 
-    let parents = nsga3_select(state, population, directions);
+    let (parents, selected_indices) = nsga3_select(state, population, directions);
 
-    // Assign ranks for tournament selection
+    // Assign Pareto front ranks for tournament selection
     let n_obj = directions.len();
     let min_values: Vec<Vec<f64>> = population
         .iter()
         .map(|t| to_minimize_space(&t.values, directions))
         .collect();
     let fronts = pareto::fast_non_dominated_sort(&min_values, &vec![Direction::Minimize; n_obj]);
-    let mut rank = vec![0_usize; parents.len()];
+    // Build rank lookup for population indices
+    let mut pop_rank = vec![0_usize; population.len()];
     for (front_rank, front) in fronts.iter().enumerate() {
         for &idx in front {
-            if idx < rank.len() {
-                rank[idx] = front_rank;
+            if idx < pop_rank.len() {
+                pop_rank[idx] = front_rank;
             }
         }
     }
-    // Ranks for selected parents (simplified: use index order)
-    let parent_ranks: Vec<usize> = (0..parents.len())
-        .map(|i| i % (fronts.len().max(1)))
+    // Map population ranks to selected parent indices
+    let parent_ranks: Vec<usize> = selected_indices
+        .iter()
+        .map(|&idx| {
+            if idx < pop_rank.len() {
+                pop_rank[idx]
+            } else {
+                0
+            }
+        })
         .collect();
 
     let mut offspring = Vec::with_capacity(pop_size);
