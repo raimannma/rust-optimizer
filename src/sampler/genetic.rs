@@ -324,8 +324,8 @@ pub(crate) fn sbx_crossover_f64(
         (1.0 / (2.0 * (1.0 - u))).powf(1.0 / (eta + 1.0))
     };
 
-    let c1 = 0.5 * ((1.0 + beta) * p1 + (1.0 - beta) * p2);
-    let c2 = 0.5 * ((1.0 - beta) * p1 + (1.0 + beta) * p2);
+    let c1 = f64::midpoint((1.0 + beta) * p1, (1.0 - beta) * p2);
+    let c2 = f64::midpoint((1.0 - beta) * p1, (1.0 + beta) * p2);
 
     (c1.clamp(low, high), c2.clamp(low, high))
 }

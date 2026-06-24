@@ -256,7 +256,7 @@ mod tests {
             if let ParamValue::Int(v) = value {
                 assert!((0..=10).contains(&v));
                 // Check it's on the step grid: 0, 2, 4, 6, 8, 10
-                assert!(v % 2 == 0);
+                assert_eq!(v % 2, 0);
             } else {
                 panic!("Expected Int value");
             }
