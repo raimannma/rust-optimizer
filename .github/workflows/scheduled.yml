@@ -21,12 +21,12 @@ jobs:
       matrix:
         rust: [beta, nightly]
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Install Rust ${{ matrix.rust }}
         run: |
           rustup override set ${{ matrix.rust }}
           rustup update ${{ matrix.rust }}
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       - name: Check compilation
         run: cargo check --all-features --all-targets
       - name: Run tests
@@ -41,12 +41,12 @@ jobs:
       matrix:
         rust: [stable, beta, nightly]
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Install Rust ${{ matrix.rust }}
         run: |
           rustup override set ${{ matrix.rust }}
           rustup update ${{ matrix.rust }}
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       - name: Update dependencies
         run: cargo update
       - name: Check compilation
