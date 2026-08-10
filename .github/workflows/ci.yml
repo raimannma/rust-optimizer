@@ -35,7 +35,7 @@ jobs:
           rustup override set stable
           rustup update stable
           rustup component add clippy
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - run: cargo clippy --all-targets --all-features -- -D warnings
 
   test:
@@ -47,7 +47,7 @@ jobs:
         run: |
           rustup override set stable
           rustup update stable
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - name: Run tests
         run: cargo test --verbose --all-features --all-targets
       - name: Run doc tests
@@ -62,7 +62,7 @@ jobs:
         run: |
           rustup override set stable
           rustup update stable
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - name: Run basic_optimization
         run: cargo run --example basic_optimization
       - name: Run parameter_types
@@ -91,7 +91,7 @@ jobs:
         run: |
           rustup override set stable
           rustup update stable
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - run: cargo doc --all-features --no-deps
         env:
           RUSTDOCFLAGS: -D warnings
@@ -111,7 +111,7 @@ jobs:
           rustup update stable
       - name: Install cargo-hack
         uses: taiki-e/install-action@cargo-hack
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - name: Check feature powerset
         run: cargo hack check --feature-powerset --no-dev-deps --partition ${{ matrix.partition }}/4
 
@@ -127,7 +127,7 @@ jobs:
           rustup component add llvm-tools-preview
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - name: Generate coverage report
         run: cargo llvm-cov --all-features --lcov --output-path lcov.info
       - name: Upload coverage to Codecov
@@ -146,7 +146,7 @@ jobs:
         run: |
           rustup override set 1.89
           rustup update 1.89
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - name: Check compilation
         run: cargo check --all-features
 
@@ -166,7 +166,7 @@ jobs:
         run: |
           rustup override set stable
           rustup update stable
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - name: Machete
         uses: bnjbvr/cargo-machete@ac30a525c0a8d163a92d727b3ff079ee3f6ecb08
 
@@ -179,7 +179,7 @@ jobs:
         run: |
           rustup override set stable
           rustup update stable
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - name: Install cargo-semver-checks
         uses: taiki-e/install-action@cargo-semver-checks
       - name: Check semver
@@ -194,7 +194,7 @@ jobs:
         run: |
           rustup toolchain install nightly
           rustup override set nightly
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - name: Generate minimal version lockfile
         run: cargo +nightly -Z minimal-versions update
       - name: Install Rust stable
@@ -217,7 +217,7 @@ jobs:
         run: |
           rustup override set stable
           rustup update stable
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - name: Check compilation
         run: cargo check --all-features
       - name: Run tests
@@ -241,7 +241,7 @@ jobs:
           rustup override set stable
           rustup update stable
           rustup target add ${{ matrix.target }}
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - name: Check compilation
         run: cargo check --all-features --target ${{ matrix.target }}
 
@@ -270,7 +270,7 @@ jobs:
         run: |
           rustup override set stable
           rustup update stable
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - name: Run benchmarks (smoke test)
         run: cargo bench --all-features --bench samplers --bench optimization
 
@@ -293,7 +293,7 @@ jobs:
           ref: ${{ github.event.pull_request.base.sha }}
           clean: false
 
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: bench-base
 
@@ -306,7 +306,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           clean: false
 
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: bench-head
 
@@ -380,7 +380,7 @@ jobs:
         run: |
           rustup override set stable
           rustup update stable
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
       - name: Check if version already published
         id: check
