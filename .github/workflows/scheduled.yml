@@ -26,7 +26,7 @@ jobs:
         run: |
           rustup override set ${{ matrix.rust }}
           rustup update ${{ matrix.rust }}
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - name: Check compilation
         run: cargo check --all-features --all-targets
       - name: Run tests
@@ -46,7 +46,7 @@ jobs:
         run: |
           rustup override set ${{ matrix.rust }}
           rustup update ${{ matrix.rust }}
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - name: Update dependencies
         run: cargo update
       - name: Check compilation
