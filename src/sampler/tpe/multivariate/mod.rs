@@ -115,7 +115,7 @@
 mod engine;
 mod trials;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use parking_lot::Mutex;
@@ -221,6 +221,9 @@ struct JointSampleCache {
     trial_id: u64,
     search_space: HashMap<ParamId, Distribution>,
     sample: HashMap<ParamId, ParamValue>,
+    /// Parameters already handed out for this trial, so two parameters sharing an
+    /// identical `Distribution` do not collapse onto the same sampled value.
+    assigned: HashSet<ParamId>,
 }
 
 pub struct MultivariateTpeSampler {
@@ -460,63 +463,60 @@ impl Sampler for MultivariateTpeSampler {
         trial_id: u64,
         history: &[CompletedTrial],
     ) -> ParamValue {
-        // Check if we have a cached joint sample for this trial
         {
-            let cache = self.joint_sample_cache.lock();
-            if let Some(ref c) = *cache
-                && c.trial_id == trial_id
+            let mut cache = self.joint_sample_cache.lock();
+
+            if cache.as_ref().is_none_or(|c| c.trial_id != trial_id) {
+                let search_space = Self::build_search_space_from_history(distribution, history);
+                let sample = self.sample_joint(&search_space, history);
+                *cache = Some(JointSampleCache {
+                    trial_id,
+                    search_space,
+                    sample,
+                    assigned: HashSet::new(),
+                });
+            }
+
+            if let Some(c) = cache.as_mut()
+                && let Some(value) = Self::take_matching_param(distribution, c)
             {
-                // Try to find a matching parameter from the cached sample
-                if let Some(value) =
-                    Self::find_matching_param(distribution, &c.search_space, &c.sample)
-                {
-                    return value;
-                }
+                return value;
             }
         }
 
-        // Build the search space from history to get parameter names
-        let search_space = Self::build_search_space_from_history(distribution, history);
-
-        // Generate a joint sample
-        let joint_sample = self.sample_joint(&search_space, history);
-
-        // Cache the joint sample for this trial
-        let result = Self::find_matching_param(distribution, &search_space, &joint_sample);
-        {
-            let mut cache = self.joint_sample_cache.lock();
-            *cache = Some(JointSampleCache {
-                trial_id,
-                search_space,
-                sample: joint_sample,
-            });
-        }
-
-        // Find and return the value for the requested distribution
-        result.unwrap_or_else(|| {
-            // Fallback to uniform sampling if no match found
-            let mut rng = self.rng.lock();
-            crate::sampler::common::sample_random(&mut rng, distribution)
-        })
+        // Fallback to uniform sampling when the joint sample holds no unassigned
+        // parameter with this distribution.
+        let mut rng = self.rng.lock();
+        crate::sampler::common::sample_random(&mut rng, distribution)
     }
 }
 
 impl MultivariateTpeSampler {
-    /// Finds a matching parameter value from the cached sample based on exact
-    /// distribution equality.
-    fn find_matching_param(
+    /// Claims a not-yet-assigned parameter value from the cached joint sample based on
+    /// exact distribution equality.
+    ///
+    /// The `Sampler` trait does not carry the requested `ParamId`, so parameters are
+    /// matched by distribution. Claimed ids are recorded so that distinct parameters
+    /// sharing an identical `Distribution` receive distinct values, and candidates are
+    /// considered in `ParamId` order so a seeded sampler stays reproducible regardless
+    /// of `HashMap` iteration order.
+    fn take_matching_param(
         distribution: &Distribution,
-        search_space: &HashMap<ParamId, Distribution>,
-        cached_sample: &HashMap<ParamId, ParamValue>,
+        cache: &mut JointSampleCache,
     ) -> Option<ParamValue> {
-        for (id, dist) in search_space {
-            if dist == distribution
-                && let Some(value) = cached_sample.get(id)
-            {
-                return Some(value.clone());
-            }
-        }
-        None
+        let id = cache
+            .search_space
+            .iter()
+            .filter(|(id, dist)| {
+                *dist == distribution
+                    && !cache.assigned.contains(*id)
+                    && cache.sample.contains_key(*id)
+            })
+            .map(|(id, _)| *id)
+            .min()?;
+
+        cache.assigned.insert(id);
+        cache.sample.get(&id).cloned()
     }
 
     /// Builds a search space from history and the current distribution.
@@ -4078,7 +4078,7 @@ mod tests {
         }
 
         #[test]
-        fn test_sampler_trait_cache_consistency() {
+        fn test_sampler_trait_distinct_params_within_a_trial() {
             let sampler = MultivariateTpeSampler::builder()
                 .n_startup_trials(5)
                 .seed(42)
@@ -4088,17 +4088,19 @@ mod tests {
             let dist = float_dist(0.0, 1.0);
             let history: Vec<CompletedTrial> = vec![];
 
-            // Sample twice with the same trial_id
+            // `Trial::suggest_param` returns its own cached value when the same parameter is
+            // suggested twice, so two `sample` calls under one trial_id are always two
+            // distinct parameters and must not collapse onto a single value.
             let value1 = sampler.sample(&dist, 0, &history);
             let value2 = sampler.sample(&dist, 0, &history);
 
-            // Should return cached value for same trial_id
             match (&value1, &value2) {
                 (ParamValue::Float(v1), ParamValue::Float(v2)) => {
                     assert!(
-                        (*v1 - *v2).abs() < f64::EPSILON,
-                        "Same trial_id should return same value: {v1} vs {v2}"
+                        (*v1 - *v2).abs() > f64::EPSILON,
+                        "Distinct parameters must not share a value: {v1} vs {v2}"
                     );
+                    assert!((0.0..=1.0).contains(v1) && (0.0..=1.0).contains(v2));
                 }
                 _ => panic!("Expected Float values"),
             }
@@ -4220,8 +4222,44 @@ mod tests {
             }
         }
 
+        fn joint_cache(
+            search_space: HashMap<ParamId, Distribution>,
+            sample: HashMap<ParamId, ParamValue>,
+        ) -> JointSampleCache {
+            JointSampleCache {
+                trial_id: 0,
+                search_space,
+                sample,
+                assigned: HashSet::new(),
+            }
+        }
+
         #[test]
-        fn test_find_matching_param_float() {
+        fn test_take_matching_param_does_not_alias_identical_distributions() {
+            let x_id = ParamId::new();
+            let y_id = ParamId::new();
+            let dist = float_dist(0.0, 1.0);
+            let mut space = HashMap::new();
+            space.insert(x_id, dist.clone());
+            space.insert(y_id, dist.clone());
+            let mut sample = HashMap::new();
+            sample.insert(x_id, ParamValue::Float(0.25));
+            sample.insert(y_id, ParamValue::Float(0.75));
+
+            let mut cache = joint_cache(space, sample);
+            let first = MultivariateTpeSampler::take_matching_param(&dist, &mut cache);
+            let second = MultivariateTpeSampler::take_matching_param(&dist, &mut cache);
+            let third = MultivariateTpeSampler::take_matching_param(&dist, &mut cache);
+
+            // Candidates are claimed in ParamId order, so the assignment is reproducible
+            // regardless of HashMap iteration order.
+            assert_eq!(first, Some(ParamValue::Float(0.25)));
+            assert_eq!(second, Some(ParamValue::Float(0.75)));
+            assert_eq!(third, None);
+        }
+
+        #[test]
+        fn test_take_matching_param_float() {
             let x_id = ParamId::new();
             let y_id = ParamId::new();
             let dist = float_dist(0.0, 1.0);
@@ -4232,7 +4270,8 @@ mod tests {
             cached.insert(x_id, ParamValue::Float(0.5));
             cached.insert(y_id, ParamValue::Float(2.8));
 
-            let result = MultivariateTpeSampler::find_matching_param(&dist, &space, &cached);
+            let mut cache = joint_cache(space, cached);
+            let result = MultivariateTpeSampler::take_matching_param(&dist, &mut cache);
 
             assert!(result.is_some());
             if let Some(ParamValue::Float(v)) = result {
@@ -4241,7 +4280,7 @@ mod tests {
         }
 
         #[test]
-        fn test_find_matching_param_int() {
+        fn test_take_matching_param_int() {
             let n_id = ParamId::new();
             let dist = int_dist(0, 10);
             let mut space = HashMap::new();
@@ -4249,7 +4288,8 @@ mod tests {
             let mut cached = HashMap::new();
             cached.insert(n_id, ParamValue::Int(5));
 
-            let result = MultivariateTpeSampler::find_matching_param(&dist, &space, &cached);
+            let mut cache = joint_cache(space, cached);
+            let result = MultivariateTpeSampler::take_matching_param(&dist, &mut cache);
 
             assert!(result.is_some());
             if let Some(ParamValue::Int(v)) = result {
@@ -4258,7 +4298,7 @@ mod tests {
         }
 
         #[test]
-        fn test_find_matching_param_categorical() {
+        fn test_take_matching_param_categorical() {
             let choice_id = ParamId::new();
             let dist = categorical_dist(3);
             let mut space = HashMap::new();
@@ -4266,7 +4306,8 @@ mod tests {
             let mut cached = HashMap::new();
             cached.insert(choice_id, ParamValue::Categorical(1));
 
-            let result = MultivariateTpeSampler::find_matching_param(&dist, &space, &cached);
+            let mut cache = joint_cache(space, cached);
+            let result = MultivariateTpeSampler::take_matching_param(&dist, &mut cache);
 
             assert!(result.is_some());
             if let Some(ParamValue::Categorical(v)) = result {
@@ -4275,7 +4316,7 @@ mod tests {
         }
 
         #[test]
-        fn test_find_matching_param_no_match() {
+        fn test_take_matching_param_no_match() {
             let x_id = ParamId::new();
             let mut space = HashMap::new();
             space.insert(x_id, float_dist(0.0, 1.0));
@@ -4284,13 +4325,14 @@ mod tests {
 
             // Looking for Int, but only Float in search space
             let dist = int_dist(0, 10);
-            let result = MultivariateTpeSampler::find_matching_param(&dist, &space, &cached);
+            let mut cache = joint_cache(space, cached);
+            let result = MultivariateTpeSampler::take_matching_param(&dist, &mut cache);
 
             assert!(result.is_none());
         }
 
         #[test]
-        fn test_find_matching_param_out_of_bounds() {
+        fn test_take_matching_param_out_of_bounds() {
             let x_id = ParamId::new();
             // Search space has a different distribution than what we're looking for
             let mut space = HashMap::new();
@@ -4299,7 +4341,8 @@ mod tests {
             cached.insert(x_id, ParamValue::Float(5.0));
 
             let dist = float_dist(0.0, 1.0);
-            let result = MultivariateTpeSampler::find_matching_param(&dist, &space, &cached);
+            let mut cache = joint_cache(space, cached);
+            let result = MultivariateTpeSampler::take_matching_param(&dist, &mut cache);
 
             assert!(result.is_none());
         }
