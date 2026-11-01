@@ -654,7 +654,10 @@ mod tests {
     fn test_group_empty_trials() {
         let trials: Vec<CompletedTrial> = vec![];
         let groups = GroupDecomposedSearchSpace::calculate(&trials);
-        assert!(groups.is_empty());
+        assert_eq!(
+            groups,
+            [] as [std::collections::HashSet<crate::parameter::ParamId>; 0]
+        );
     }
 
     #[test]

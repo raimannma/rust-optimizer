@@ -635,7 +635,7 @@ mod tests {
     fn test_pareto_front_indices_empty() {
         let values: Vec<Vec<f64>> = vec![];
         let dirs = [Direction::Minimize];
-        assert!(pareto_front_indices(&values, &dirs).is_empty());
+        assert_eq!(pareto_front_indices(&values, &dirs), [] as [usize; 0]);
     }
 
     #[test]

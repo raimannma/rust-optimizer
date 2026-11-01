@@ -726,7 +726,7 @@ mod tests {
             step: None,
         };
         let points = generate_int_grid_points(&dist, 10);
-        assert!(points.is_empty());
+        assert_eq!(points, [] as [i64; 0]);
     }
 
     // ==================== Float Distribution Tests ====================
@@ -846,7 +846,7 @@ mod tests {
             step: None,
         };
         let points = generate_float_grid_points(&dist, 10);
-        assert!(points.is_empty());
+        assert_eq!(points, [] as [f64; 0]);
     }
 
     // ==================== Categorical Distribution Tests ====================
@@ -869,7 +869,7 @@ mod tests {
     fn test_categorical_grid_empty() {
         let dist = CategoricalDistribution { n_choices: 0 };
         let points = generate_categorical_grid_points(&dist);
-        assert!(points.is_empty());
+        assert_eq!(points, [] as [usize; 0]);
     }
 
     // ==================== Sampler Exhaustion Tests ====================
@@ -1184,6 +1184,6 @@ mod tests {
             step: None,
         };
         let points = generate_int_grid_points(&dist, 0);
-        assert!(points.is_empty());
+        assert_eq!(points, [] as [i64; 0]);
     }
 }
