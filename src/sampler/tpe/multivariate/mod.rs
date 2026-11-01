@@ -2311,7 +2311,7 @@ mod tests {
 
             let observations = sampler.extract_observations(&trials, &param_order);
 
-            assert!(observations.is_empty());
+            assert_eq!(observations, [] as [Vec<f64>; 0]);
         }
 
         #[test]
@@ -2326,7 +2326,7 @@ mod tests {
 
             // Should have one row (for the trial) with zero columns
             assert_eq!(observations.len(), 1);
-            assert!(observations[0].is_empty());
+            assert_eq!(observations[0], [] as [f64; 0]);
         }
 
         #[test]
@@ -2569,7 +2569,7 @@ mod tests {
 
             // Should have one row with zero columns (categorical skipped)
             assert_eq!(observations.len(), 1);
-            assert!(observations[0].is_empty());
+            assert_eq!(observations[0], [] as [f64; 0]);
         }
 
         #[test]
@@ -3815,7 +3815,7 @@ mod tests {
                 MultivariateTpeSampler::extract_categorical_indices(&trial_refs, param_id);
 
             // Should be empty since param is Float, not Categorical
-            assert!(indices.is_empty());
+            assert_eq!(indices, [] as [usize; 0]);
         }
 
         #[test]
