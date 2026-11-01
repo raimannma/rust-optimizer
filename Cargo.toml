@@ -27,6 +27,7 @@ tracing = { version = "0.1.44", optional = true }
 sobol_burley = { version = "0.5", optional = true }
 nalgebra = { version = "0.35", optional = true }
 fs2 = { version = "0.4", optional = true }
+polars = { version = "0.55", default-features = false, features = ["fmt_no_tty"], optional = true }
 
 [features]
 default = []
@@ -38,6 +39,7 @@ tracing = ["dep:tracing"]
 sobol = ["dep:sobol_burley"]
 cma-es = ["dep:nalgebra"]
 gp = ["dep:nalgebra"]
+polars = ["dep:polars"]
 
 [dev-dependencies]
 tokio = { version = "1.54", features = ["rt-multi-thread", "macros", "time"] }
@@ -92,6 +94,19 @@ path = "examples/ask_and_tell.rs"
 name = "multi_objective"
 path = "examples/multi_objective.rs"
 
+[[example]]
+name = "dataframe"
+path = "examples/dataframe.rs"
+required-features = ["polars"]
+
+[[test]]
+name = "polars_tests"
+required-features = ["polars"]
+
 [[test]]
 name = "journal_tests"
 required-features = ["journal"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

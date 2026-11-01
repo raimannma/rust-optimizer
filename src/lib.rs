@@ -1,3 +1,4 @@
+#![cfg_attr(docsrs, feature(doc_cfg))]
 #![forbid(unsafe_code)]
 #![deny(clippy::all)]
 #![deny(unreachable_pub)]
@@ -81,6 +82,7 @@
 //! | `cma-es` | `CmaEsSampler` — Covariance Matrix Adaptation Evolution Strategy | off |
 //! | `gp` | `GpSampler` — Gaussian Process surrogate with Expected Improvement | off |
 //! | `tracing` | Structured log events via [`tracing`](https://docs.rs/tracing) at key optimization points | off |
+//! | `polars` | Export trials to [polars](https://docs.rs/polars) `DataFrame`s (`Study::to_dataframe`); re-exports `optimizer::polars`. Requires Rust 1.94+ | off |
 
 /// Emit a `tracing::info!` event when the `tracing` feature is enabled.
 /// No-op otherwise.
@@ -106,6 +108,8 @@ macro_rules! trace_debug {
     ($($arg:tt)*) => {};
 }
 
+#[cfg(feature = "polars")]
+pub mod dataframe;
 pub mod distribution;
 mod error;
 mod fanova;
@@ -130,6 +134,14 @@ pub use fanova::{FanovaConfig, FanovaResult};
 pub use objective::Objective;
 #[cfg(feature = "derive")]
 pub use optimizer_derive::Categorical;
+/// The polars version this crate was built against (feature `polars`).
+///
+/// Import polars through this re-export (`use optimizer::polars::prelude::*;`)
+/// so the `DataFrame` returned by [`Study::to_dataframe`] is always the same
+/// type your code works with, even if you depend on a different polars
+/// version yourself.
+#[cfg(feature = "polars")]
+pub use polars;
 #[cfg(feature = "serde")]
 pub use study::StudySnapshot;
 pub use study::{Study, StudyBuilder};
@@ -146,6 +158,8 @@ pub mod prelude {
     #[cfg(feature = "derive")]
     pub use optimizer_derive::Categorical as DeriveCategory;
 
+    #[cfg(feature = "polars")]
+    pub use crate::dataframe::{DataFrameValue, DecodeParam, TrialsDataFrame};
     pub use crate::error::{Error, Result, TrialPruned};
     pub use crate::fanova::{FanovaConfig, FanovaResult};
     pub use crate::multi_objective::{

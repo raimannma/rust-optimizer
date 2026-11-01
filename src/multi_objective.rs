@@ -216,7 +216,7 @@ impl Sampler for MoSamplerBridge {
 pub struct MultiObjectiveStudy {
     directions: Vec<Direction>,
     sampler: Arc<dyn MultiObjectiveSampler>,
-    completed_trials: Arc<RwLock<Vec<MultiObjectiveTrial>>>,
+    pub(crate) completed_trials: Arc<RwLock<Vec<MultiObjectiveTrial>>>,
     next_trial_id: AtomicU64,
 }
 

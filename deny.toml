@@ -15,6 +15,8 @@ allow = [
     "Apache-2.0 WITH LLVM-exception",
     "Unicode-3.0",
     "Zlib",
+    # xxhash-rust (hard dependency of polars-core, `polars` feature)
+    "BSL-1.0",
 ]
 confidence-threshold = 0.8
 
