@@ -81,6 +81,8 @@ jobs:
         run: cargo run --example ask_and_tell
       - name: Run multi_objective
         run: cargo run --example multi_objective
+      - name: Run dataframe
+        run: cargo run --example dataframe --features polars
 
   docs:
     name: Docs
@@ -113,7 +115,10 @@ jobs:
         uses: taiki-e/install-action@cargo-hack
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - name: Check feature powerset
-        run: cargo hack check --feature-powerset --no-dev-deps --partition ${{ matrix.partition }}/4
+        run: cargo hack check --feature-powerset --no-dev-deps --exclude-features polars --partition ${{ matrix.partition }}/4
+      - name: Check polars feature alone
+        if: matrix.partition == 1
+        run: cargo check --no-default-features --features polars
 
   coverage:
     name: Coverage
@@ -148,7 +153,20 @@ jobs:
           rustup update 1.89
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - name: Check compilation
-        run: cargo check --all-features
+        run: cargo check --features async,derive,serde,journal,tracing,sobol,cma-es,gp
+
+  msrv-polars:
+    name: MSRV polars (1.94)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install Rust 1.94
+        run: |
+          rustup override set 1.94
+          rustup update 1.94
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - name: Check compilation
+        run: cargo check --features polars
 
   deny:
     name: Cargo Deny
@@ -202,7 +220,7 @@ jobs:
           rustup override set stable
           rustup update stable
       - name: Check with minimal versions
-        run: cargo check --all-features --locked
+        run: cargo check --locked --features async,derive,serde,journal,tracing,sobol,cma-es,gp
 
   cross-platform:
     name: ${{ matrix.os }}
@@ -366,6 +384,7 @@ jobs:
       - feature-check
       - coverage
       - msrv
+      - msrv-polars
       - deny
       - machete
       - semver

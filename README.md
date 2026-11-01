@@ -35,6 +35,7 @@ println!("Best x = {:.4}, f(x) = {:.4}", best.get(&x).unwrap(), best.value);
 - **[Storage backends](https://docs.rs/optimizer/latest/optimizer/storage/)** — In-memory (default) or JSONL journal for persistence and resumption
 - **[Visualization](https://docs.rs/optimizer/latest/optimizer/fn.generate_html_report.html)** — HTML reports with optimization history and parameter importance
 - **[Analysis](https://docs.rs/optimizer/latest/optimizer/struct.Study.html#method.fanova)** — fANOVA and Spearman correlation for parameter importance
+- **[DataFrame export](https://docs.rs/optimizer/latest/optimizer/dataframe/)** — `study.to_dataframe()` into polars for ad-hoc analysis (feature `polars`)
 
 ## Feature Flags
 
@@ -48,6 +49,32 @@ println!("Best x = {:.4}, f(x) = {:.4}", best.get(&x).unwrap(), best.value);
 | `cma-es` | CMA-ES sampler (requires `nalgebra`) | No |
 | `gp` | Gaussian Process sampler (requires `nalgebra`) | No |
 | `tracing` | Structured logging with `tracing` | No |
+| `polars` | Export trials to polars `DataFrame`s (requires Rust 1.94+) | No |
+
+## Polars
+
+```rust
+use optimizer::polars::prelude::*; // the polars version optimizer was built against
+use optimizer::prelude::*;
+
+// polars errors are `PolarsError`, not `optimizer::Error`, so return a boxed error.
+// Spell out `std::result::Result`: the optimizer prelude's `Result<T>` takes one argument.
+fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    // ... build and run `study` ...
+    let df = study.to_dataframe()?;                                              // categorical = choice index
+    let df = study.to_dataframe_with(&[&optimizer, &batch_norm, &activation])?; // "adam", true, "Relu"
+    let top = study.top_trials(5).to_dataframe()?;
+    Ok(())
+}
+```
+
+Name your params with `.name()` so columns get readable labels. To call `.lazy()` on the result, add polars
+directly at the same minor version as optimizer's and enable `lazy` (a `polars/lazy` entry in optimizer's
+`features` list does not work):
+
+```toml
+polars = { version = "0.55", default-features = false, features = ["lazy"] } # must match optimizer's polars minor
+```
 
 ## Examples
 
@@ -61,6 +88,7 @@ cargo run --example async_parallel --features async          # Evaluate trials c
 cargo run --example journal_storage --features journal       # Persist trials to disk and resume later
 cargo run --example ask_and_tell                             # Decouple sampling from evaluation
 cargo run --example multi_objective                          # Optimize competing objectives + Pareto front
+cargo run --example dataframe --features polars              # Analyse trials with polars
 ```
 
 ## Learn More
