@@ -18,7 +18,7 @@ readme = "README.md"
 [dependencies]
 fastrand = "2"
 thiserror = "2"
-parking_lot = "0.12"
+parking_lot = "0.13"
 tokio = { version = "1", features = ["sync", "rt-multi-thread"], optional = true }
 optimizer-derive = { version = "0.1", path = "optimizer-derive", optional = true }
 serde = { version = "1", features = ["derive"], optional = true }
