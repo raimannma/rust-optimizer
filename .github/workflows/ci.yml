@@ -186,7 +186,7 @@ jobs:
           rustup update stable
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - name: Machete
-        uses: bnjbvr/cargo-machete@ac30a525c0a8d163a92d727b3ff079ee3f6ecb08
+        uses: bnjbvr/cargo-machete@a84eadc0a20e522e37a502609e97a7ce30c998ed
 
   semver:
     name: Semver Check
